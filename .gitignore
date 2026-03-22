@@ -1,0 +1,13 @@
+venv/
+venv2/
+
+data/
+DataCollect/
+
+models/*.keras
+*.h5
+
+__pycache__/
+*.pyc
+
+.vscode/
