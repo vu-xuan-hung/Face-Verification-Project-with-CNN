@@ -31,7 +31,7 @@ floatingPoint = 6
 save = True
 blurThreshold = 35  # giá trị blur để phân biệt giữa người thật và ảnh
 outputFolderPath = "../data/DataCollect"
-classID = 1  # 0 fake, 1 real
+classID = 0  # 0 fake, 1 real
 ################
 cap = cv2.VideoCapture(0)
 detector = FaceDetector()
@@ -83,20 +83,21 @@ while True:
                 setw = w * percent / 100
                 x = int(x - setw)
                 w = int(w + 2 * setw)
+
                 seth = h * percent / 100
                 y = int(y - seth * 3)
                 h = int(h + 3.5 * seth)
-                # tranh trường hợp phần mở rộng vượt ra ngoài khung hình
-                if x < 0:
-                    x = 0
-                if y < 0:
-                    y = 0
-                if w < 0:
-                    w = 0
-                if h < 0:
-                    h = 0
+                # --- Clip biên ảnh (đảm bảo vùng nằm trong khung hình) ---
+                x = max(0, x)
+                y = max(0, y)
+                w = min(w, img.shape[1] - x)
+                h = min(h, img.shape[0] - y)
+                if w <= 0 or h <= 0:
+                    continue
                 # -----find blud-----
                 imgFace = img[y : y + h, x : x + w]
+                if imgFace.size == 0:
+                    continue
                 imgFacecopy = imgFace.copy()
                 imgFace = cv2.resize(imgFacecopy, (128, 128))
                 imgGray = cv2.cvtColor(imgFacecopy, cv2.COLOR_BGR2GRAY)
@@ -109,45 +110,59 @@ while True:
                     listBlur.append(False)
                 # --find blink and movement--
                 # blink detection using mediapipe face mesh
+                # --- Tính blink bằng MediaPipe trên ảnh đã resize 128x128 ---
                 rgb = cv2.cvtColor(imgFace, cv2.COLOR_BGR2RGB)
                 result = face_mesh.process(rgb)
                 blink = False
-
                 if result.multi_face_landmarks:
                     for face_landmarks in result.multi_face_landmarks:
                         landmarks = face_landmarks.landmark
 
-                        eye_idx = [33, 160, 158, 133, 153, 144]
-                        eye = []
+                        # Chỉ số landmark cho mắt trái và phải (theo MediaPipe)
+                        left_eye_idx = [33, 160, 158, 133, 153, 144]
+                        right_eye_idx = [362, 385, 387, 263, 373, 380]
 
-                        for i in eye_idx:
-                            px = int(landmarks[i].x * 128)
-                            py = int(landmarks[i].y * 128)
-                            eye.append(np.array([px, py]))
+                        def get_eye_points(idx_list):
+                            pts = []
+                            for i in idx_list:
+                                px = int(landmarks[i].x * 128)
+                                py = int(landmarks[i].y * 128)
+                                pts.append(np.array([px, py]))
+                            return pts
 
-                        ear = EAR(eye)
+                        left_eye = get_eye_points(left_eye_idx)
+                        right_eye = get_eye_points(right_eye_idx)
+
+                        ear_left = EAR(left_eye)
+                        ear_right = EAR(right_eye)
+                        ear = min(
+                            ear_left, ear_right
+                        )  # lấy giá trị nhỏ hơn (mắt nhắm nhiều hơn)
 
                         if ear < BLINK_THRESHOLD:
                             blink = True
-                        print(f"EAR: {ear}, Blink: {blink}")
+                        print(f"EAR: {ear:.3f}, Blink: {blink}")
 
                 # ---normalize----
                 imgh, imgw, _ = img.shape
                 # center
-                xc, yc = x + imgw / 2, y + imgh / 2
+                xc = x + w / 2
+                yc = y + h / 2
 
-                xcn = round(xc / camWidth, floatingPoint)
-                ycn = round(yc / camHeight, floatingPoint)
-                wn = round(w / camWidth, floatingPoint)
-                hn = round(h / camHeight, floatingPoint)
+                xcn = xc / imgw
+                ycn = yc / imgh
+                wn = w / imgw
+                hn = h / imgh
 
+                xcn = np.clip(xcn, 0, 1)
+                ycn = np.clip(ycn, 0, 1)
+                wn = np.clip(wn, 0, 1)
+                hn = np.clip(hn, 0, 1)
+                if x + w > imgw:
+                    w = imgw - x
+                if y + h > imgh:
+                    h = imgh - y
                 print(f"center: {xcn}, {ycn}, width: {wn}, height: {hn}, blur: {blur}")
-
-                # tranh trường hợp phần mở rộng vượt ra ngoài khung hình
-                xcn = min(1.0, max(0.0, xcn))
-                ycn = min(1.0, max(0.0, ycn))
-                wn = min(1.0, max(0.0, wn))
-                hn = min(1.0, max(0.0, hn))
                 listInfo.append(f"{classID} {xcn} {ycn} {wn} {hn}\n")
 
                 # ---vẽ hình chữ nhật quanh khuôn mặt---

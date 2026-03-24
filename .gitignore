@@ -1,5 +1,6 @@
 venv/
-venv2/
+venv310/
+faceverifi/
 
 data/
 DataCollect/

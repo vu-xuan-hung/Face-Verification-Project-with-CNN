@@ -16,6 +16,7 @@ class CNNModel:
         )
 
     def build_model(self):
+<<<<<<< Updated upstream
         model = models.Sequential(
             [
                 layers.Input(shape=self.input_shape),
@@ -38,6 +39,54 @@ class CNNModel:
                 layers.Dense(1, activation="sigmoid"),
             ]
         )
+=======
+        _input = tf.keras.Input(shape=self.input_shape)
+        x = layers.RandomFlip("horizontal")(_input)
+        x = layers.RandomRotation(0.2)(x)
+        x = layers.RandomZoom(0.2)(x)
+        # ----Stage 0: Conv3x3, Stride 2, 24 channels------
+        x = layers.Conv2D(24, (3, 3), activation="relu", padding="same", strides=2)(x)
+        x = layers.BatchNormalization()(x)
+
+        # ------Stage 1: Fused-MBConv1, 2 layers, Stride 1, 24 channels------
+        for _ in range(2):
+            x = self._Fused_MBConvBlock(
+                x, out_channels=24, kernel_size=3, strides=1, use_se=False, r=4, t=1
+            )
+        # -------Stage 2: Fused-MBConv4, 4 layers, Stride 2, 48 channels------
+        for i in range(4):
+            stride = 2 if i == 0 else 1  # Chỉ giảm ảnh ở layer đầu tiên của stage
+            x = self._Fused_MBConvBlock(x, out_channels=48, strides=stride, t=4)
+        # -------Stage 3: Fused-MBConv4, 4 layers, Stride 2, 64 channels------
+        for i in range(4):
+            stride = 2 if i == 0 else 1
+            x = self._Fused_MBConvBlock(x, out_channels=64, strides=stride, t=4)
+        # -------Stage 4: MBConv4, 6 layers, Stride 2, 128 channels------
+        for i in range(6):
+            stride = 2 if i == 0 else 1
+            x = self._MBConvBlock(x, out_channels=128, strides=stride, use_se=True, t=4)
+        ## Stage 5: MBConv6, 9 layers, Stride 1, 160 channels, SE
+        for _ in range(9):
+            x = self._MBConvBlock(
+                x, out_channels=160, kernel_size=3, strides=1, use_se=True, r=4, t=6
+            )
+        # Stage 6: MBConv6, 15 layers, Stride 2, 256 channels, SE
+        for i in range(15):
+            stride = 2 if i == 0 else 1
+            x = self._MBConvBlock(x, out_channels=256, strides=stride, use_se=True, t=6)
+        x = layers.Conv2D(1280, (1, 1), activation="relu", padding="same")(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Activation("swish")(x)
+
+        x = layers.GlobalMaxPooling2D()(x)
+
+        x = layers.Dense(128, activation="relu")(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Dropout(0.3)(x)
+
+        outputs = tf.keras.layers.Dense(1, activation="sigmoid")(x)
+        model = tf.keras.Model(inputs=_input, outputs=outputs)
+>>>>>>> Stashed changes
         return model
 
     def train(self, data, epochs=50, batch_size=16):
