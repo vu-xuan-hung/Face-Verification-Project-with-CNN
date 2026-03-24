@@ -1,14 +1,60 @@
+import os
+
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
+import tensorflow as tf
+from tensorflow.keras import layers
 import cv2
 import cvzone
-import tensorflow as tf
 import numpy as np
 
-# Dùng bộ lọc có sẵn của OpenCV - Không cần Protobuf!
+
+# --- Patch các lớp để loại bỏ quantization_config ---
+def patch_layer(cls):
+    original_from_config = cls.from_config
+
+    def new_from_config(cls, config):
+        config.pop("quantization_config", None)
+        return original_from_config(config)
+
+    cls.from_config = classmethod(new_from_config)
+    return cls
+
+
+# Danh sách các lớp cần patch
+layer_classes = [
+    layers.Dense,
+    layers.Conv2D,
+    layers.DepthwiseConv2D,
+    layers.BatchNormalization,
+    layers.Add,
+    layers.Multiply,
+    layers.Reshape,
+    layers.Activation,
+    layers.GlobalAveragePooling2D,
+    layers.GlobalMaxPooling2D,
+    layers.Flatten,
+    layers.Dropout,
+    layers.InputLayer,
+    layers.ZeroPadding2D,
+    layers.MaxPooling2D,
+    layers.AveragePooling2D,
+]
+
+for cls in layer_classes:
+    try:
+        patch_layer(cls)
+    except AttributeError:
+        pass  # Một số lớp có thể không có from_config
+# ------------------------------------------------
+
+# Load model
+model = tf.keras.models.load_model("./models/face_verify_v1.keras")
+
+# Cascade classifier
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
-
-model = tf.keras.models.load_model("./models/face_verify_v1.keras")
 cap = cv2.VideoCapture(0)
 classNames = ["fake", "real"]
 
@@ -18,13 +64,11 @@ while True:
         break
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.1, 8)
+    faces = face_cascade.detectMultiScale(gray, 1.1, 10)
 
     for x, y, w, h in faces:
-        # 1. Crop & Predict
         face_img = img[y : y + h, x : x + w]
         face_resized = cv2.resize(face_img, (128, 128))
-        # Nếu lúc train bạn dùng Rescaling(1./255) trong model thì để nguyên:
         face_batch = np.expand_dims(face_resized, axis=0) / 255.0
 
         prediction = model.predict(face_batch, verbose=0)
@@ -32,7 +76,6 @@ while True:
         cls = 1 if prob > 0.5 else 0
         conf = prob if cls == 1 else 1 - prob
 
-        # 2. Vẽ kết quả
         color = (0, 255, 0) if cls == 1 else (0, 0, 255)
         cvzone.cornerRect(img, (x, y, w, h), colorC=color, colorR=color)
         cvzone.putTextRect(
