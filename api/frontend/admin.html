@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="header">
+            <h1>Admin Dashboard</h1>
+            <div class="user-info">
+                <span id="adminName"></span>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
+        </div>
+
+        <div class="controls-panel">
+            <div class="filters">
+                <input type="text" id="filterUsername" placeholder="Filter by Username..." class="input-field">
+                <input type="date" id="filterDate" class="input-field">
+                <button id="filterBtn" class="primary-btn small-btn">Search</button>
+            </div>
+            <button id="exportBtn" class="secondary-btn small-btn">⬇️ Export CSV</button>
+        </div>
+
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody id="logsTableBody">
+                    <!-- Data injected here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Check Role
+        const role = localStorage.getItem('role');
+        const username = localStorage.getItem('username');
+        if (role !== 'admin') {
+            alert('Access Denied: Admins Only');
+            window.location.href = 'login.html';
+        }
+        document.getElementById('adminName').innerText = `Admin: ${username}`;
+
+        const API_URL = 'http://localhost:8000/logs';
+        const EXPORT_URL = 'http://localhost:8000/logs/export';
+
+        async function fetchLogs(userFilter = '', dateFilter = '') {
+            let url = API_URL + '?';
+            if (userFilter) url += `username=${encodeURIComponent(userFilter)}&`;
+            if (dateFilter) url += `date=${encodeURIComponent(dateFilter)}`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                renderTable(data);
+            } catch (err) {
+                console.error("Fetch DB error:", err);
+            }
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('logsTableBody');
+            tbody.innerHTML = '';
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding: 20px;">No login records found</td></tr>';
+            }
+            data.forEach(log => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${log.username}</td>
+                    <td><span class="badge ${log.role === 'admin' ? 'badge-admin' : 'badge-user'}">${log.role}</span></td>
+                    <td>${log.timestamp}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('filterBtn').addEventListener('click', () => {
+            const u = document.getElementById('filterUsername').value;
+            const d = document.getElementById('filterDate').value;
+            fetchLogs(u, d);
+        });
+
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            const u = document.getElementById('filterUsername').value;
+            const d = document.getElementById('filterDate').value;
+            let url = EXPORT_URL + '?';
+            if (u) url += `username=${encodeURIComponent(u)}&`;
+            if (d) url += `date=${encodeURIComponent(d)}`;
+            window.open(url, '_blank');
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            localStorage.clear();
+            window.location.href = 'login.html';
+        });
+
+        fetchLogs(); // initial load
+    </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 venv/
 venv310/
 faceverifi/
+node_modules/
 
 data/
 DataCollect/

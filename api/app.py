@@ -106,13 +106,6 @@ database = {
         img_to_encoding_file("./faceverifi/images/9.jpg"),
         img_to_encoding_file("./faceverifi/images/10.jpg"),
     ],
-    "hoang": [
-        img_to_encoding_file("./faceverifi/images/hoa1.jpg"),
-        img_to_encoding_file("./faceverifi/images/hoa2.jpg"),
-        img_to_encoding_file("./faceverifi/images/hoa3.jpg"),
-        img_to_encoding_file("./faceverifi/images/hoa4.jpg"),
-        img_to_encoding_file("./faceverifi/images/hoa5.jpg"),
-    ],
     "younes": [img_to_encoding_file("./faceverifi/images/younes.jpg")],
     "tian": [img_to_encoding_file("./faceverifi/images/tian.jpg")],
 }

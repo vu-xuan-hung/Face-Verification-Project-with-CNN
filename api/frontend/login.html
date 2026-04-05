@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Login System</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="login-container">
+        <h1>Face Verification Login</h1>
+        <p class="subtitle">Position your face clearly in the camera</p>
+
+        <div class="video-wrapper">
+            <!-- Hiển thị webcam -->
+            <video id="webcam" autoplay playsinline></video>
+            <!-- Canvas ẩn dùng để resize ảnh về 128x128 -->
+            <canvas id="canvas" width="128" height="128" style="display:none;"></canvas>
+
+            <div class="scanning-frame"></div>
+        </div>
+
+        <div class="controls">
+            <button id="captureBtn" class="primary-btn">📸 Capture & Login</button>
+
+            <div class="divider"><span>OR</span></div>
+
+            <!-- Upload image feature theo yêu cầu -->
+            <label for="imageUpload" class="secondary-btn">Upload Image</label>
+            <input type="file" id="imageUpload" accept="image/*" style="display:none;">
+        </div>
+
+        <!-- Hiển thị trang thái loading chờ server FastAPI trả kết quả -->
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <p>Verifying face...</p>
+        </div>
+
+        <!-- Kết quả hiển thị UI -->
+        <div id="result" class="result-box hidden"></div>
+
+        <!-- Preview ảnh 128x128 gửi đi -->
+        <div id="previewContainer" class="hidden">
+            <p>Image request (128x128):</p>
+            <img id="previewImg" src="" alt="Preview">
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

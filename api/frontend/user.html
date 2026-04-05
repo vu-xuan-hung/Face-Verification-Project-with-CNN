@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="login-container" style="max-width: 500px;">
+        <h1 id="greeting">Xin chào, <span></span>! 🎉</h1>
+        <p class="subtitle">Welcome to your personal dashboard</p>
+
+        <div class="result-box success" style="margin: 30px 0; text-align: left;">
+            <p style="margin-bottom: 10px;">👤 <strong>Quyền hạn (Role):</strong> <span id="userRole" class="badge badge-user"></span></p>
+            <p>🕒 <strong>Thời gian đăng nhập:</strong> <span id="recentTime"></span></p>
+        </div>
+
+        <div class="controls">
+            <button id="logoutBtn" class="secondary-btn">🚪 Đăng xuất</button>
+        </div>
+    </div>
+
+    <script>
+        const role = localStorage.getItem('role');
+        const username = localStorage.getItem('username');
+        const timestamp = localStorage.getItem('last_login');
+        
+        if (!username) {
+            window.location.href = 'login.html';
+        }
+
+        document.querySelector('#greeting span').innerText = username;
+        document.getElementById('userRole').innerText = role;
+        
+        if (timestamp) {
+            document.getElementById('recentTime').innerText = timestamp;
+        } else {
+            document.getElementById('recentTime').innerText = new Date().toLocaleString();
+        }
+
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            localStorage.clear();
+            window.location.href = 'login.html';
+        });
+    </script>
+</body>
+</html>
