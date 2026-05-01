@@ -1,0 +1,58 @@
+"""
+Pydantic request/response schemas for the V-Shield FastAPI server.
+
+Keeping schemas in a separate module follows the FastAPI best-practice
+of separating concerns (routes vs. data models vs. DB logic).
+"""
+
+from __future__ import annotations
+
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# Request bodies
+# ---------------------------------------------------------------------------
+
+
+class ImagePayload(BaseModel):
+    """Incoming base64-encoded face image from the React frontend."""
+
+    image: str = Field(
+        ...,
+        description=(
+            "Data URI of the face crop, e.g. "
+            "'data:image/jpeg;base64,<base64-string>'"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Response bodies
+# ---------------------------------------------------------------------------
+
+
+class PredictResponse(BaseModel):
+    """Result of a single /predict call."""
+
+    success: bool
+    username: Optional[str] = None
+    role: Optional[str] = None
+    message: Optional[str] = None
+
+
+class LoginLog(BaseModel):
+    """A single row from the login_logs table."""
+
+    username: str
+    role: str
+    timestamp: str
+
+
+class LogsResponse(BaseModel):
+    """Paginated list of login log entries."""
+
+    logs: list[LoginLog]
+    total: int
