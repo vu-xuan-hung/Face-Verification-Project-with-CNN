@@ -6,7 +6,7 @@ node_modules/
 data/
 DataCollect/
 
-models/*.keras
+artifacts/models/*.keras
 *.h5
 
 __pycache__/
