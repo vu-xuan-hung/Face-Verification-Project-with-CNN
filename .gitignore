@@ -3,7 +3,7 @@ venv310/
 faceverifi/
 node_modules/
 
-data/
+data/*
 DataCollect/
 
 artifacts/models/*.keras
