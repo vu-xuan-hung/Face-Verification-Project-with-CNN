@@ -180,6 +180,7 @@ make frontend
 make install     # Cài thư viện với uv
 make dev         # Chạy Backend FastAPI
 make frontend    # Chạy Frontend React
+make docker      # Chạy toàn bộ hệ thống bằng Docker
 make train       # Train lại mô hình CNN
 make collect     # Mở webcam thu thập data
 make format      # Format code bằng ruff

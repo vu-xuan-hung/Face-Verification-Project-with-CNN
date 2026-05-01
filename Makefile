@@ -18,6 +18,9 @@ collect:
 test:
 	uv run pytest tests/
 
+docker:
+	docker compose up --build
+
 format:
 	uv run ruff format src/
 
@@ -29,7 +32,9 @@ help:
 	@echo "  make install  - Cài đặt thư viện với uv"
 	@echo "  make dev      - Chạy Backend (FastAPI)"
 	@echo "  make frontend - Chạy Frontend (React)"
+	@echo "  make docker   - Chạy toàn bộ hệ thống bằng Docker"
 	@echo "  make train    - Huấn luyện mô hình Anti-Spoofing"
 	@echo "  make collect  - Thu thập dữ liệu khuôn mặt"
+	@echo "  make test     - Chạy unit tests"
 	@echo "  make format   - Định dạng code"
 	@echo "  make clean    - Xóa các file rác"
