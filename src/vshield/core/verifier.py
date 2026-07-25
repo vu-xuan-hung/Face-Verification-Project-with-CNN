@@ -1,111 +1,128 @@
-import numpy as np
-import os
-from vshield.core.embedder import img_to_encoding_file
+"""Enrollment loading and backward-compatible identity helpers."""
 
-def load_database(faces_dir="data/faces"):
-    database_faces = {}
-    print("Loading face dataset...")
-    
-    if not os.path.exists(faces_dir):
-        print(f"Warning: Folder {faces_dir} không tồn tại!")
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from pathlib import Path
+
+import numpy as np
+
+from vshield.core.embedder import EmbeddingError, img_to_encoding_file, normalize_embedding
+from vshield.core.identity_index import (
+    DEFAULT_DISTANCE_THRESHOLD,
+    IdentityIndex,
+    IdentityIndexError,
+    IdentityIndexUnavailableError,
+    MatchResult,
+    flatten_database_embeddings,
+    import_faiss,
+)
+
+logger = logging.getLogger(__name__)
+
+UNKNOWN_IDENTITY = "Unknown"
+
+
+def load_database(
+    faces_dir: str | Path = "data/faces",
+    encode_file: Callable[[str | Path], np.ndarray] | None = None,
+) -> dict[str, list[np.ndarray]]:
+    """Load ``faces_dir/<username>/*`` into validated unit embeddings."""
+    faces_path = Path(faces_dir)
+    encoder = encode_file or img_to_encoding_file
+    database_faces: dict[str, list[np.ndarray]] = {}
+
+    if not faces_path.is_dir():
+        logger.warning("Face enrollment directory does not exist: %s", faces_path)
         return database_faces
 
-    for username in os.listdir(faces_dir):
-        user_folder = os.path.join(faces_dir, username)
-        if os.path.isdir(user_folder):
-            embeddings = []
-            for img_name in os.listdir(user_folder):
-                if img_name.endswith(('.jpg', '.png', '.jpeg')):
-                    img_path = os.path.join(user_folder, img_name)
-                    try:
-                        emb = img_to_encoding_file(img_path)
-                        embeddings.append(emb)
-                    except Exception as e:
-                        print(f"Lỗi đọc ảnh {img_path}: {e}")
-            
-            if embeddings:
-                database_faces[username] = embeddings
-                
-    print("Dataset loaded successfully!")
+    root_images = [
+        path
+        for path in faces_path.iterdir()
+        if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png"}
+    ]
+    if root_images:
+        logger.warning(
+            "Ignoring %d root-level face images; expected faces/<username>/*",
+            len(root_images),
+        )
+
+    for user_folder in sorted(path for path in faces_path.iterdir() if path.is_dir()):
+        embeddings: list[np.ndarray] = []
+        for image_path in sorted(user_folder.iterdir()):
+            if image_path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+                continue
+            try:
+                embeddings.append(normalize_embedding(encoder(image_path)))
+            except Exception as exc:
+                logger.warning("Skipping enrollment image %s: %s", image_path, exc)
+        if embeddings:
+            database_faces[user_folder.name] = embeddings
+
     return database_faces
 
 
-# ------------------------------------------------------------------
-# FAISS-accelerated search (CẢI TIẾN #1)
-# Nếu máy chưa cài faiss thì tự động fallback về for-loop cũ
-# Cài: pip install faiss-cpu   hoặc thêm vào pyproject.toml
-# ------------------------------------------------------------------
-
 def build_faiss_index(database_faces):
-    """Xây dựng FAISS index từ dictionary embeddings.
-    
-    Trả về (index, id_to_name) hoặc (None, None) nếu faiss chưa được cài.
-    """
-    try:
-        import faiss
-
-        all_embeddings = []
-        id_to_name = {}  # ánh xạ: index số nguyên → username
-        idx = 0
-
-        for name, emb_list in database_faces.items():
-            for emb in emb_list:
-                all_embeddings.append(emb.astype(np.float32))
-                id_to_name[idx] = name
-                idx += 1
-
-        if not all_embeddings:
-            return None, None
-
-        dim = len(all_embeddings[0])
-        matrix = np.stack(all_embeddings)
-
-        # Flat L2 index — chính xác 100%, tốc độ O(1) thay vì O(n)
-        index = faiss.IndexFlatL2(dim)
-        index.add(matrix)
-
-        print(f"FAISS index built: {index.ntotal} vectors, dim={dim}")
-        return index, id_to_name
-
-    except ImportError:
-        print("faiss chưa được cài — dùng for-loop thay thế (chạy vẫn đúng, chỉ chậm hơn)")
+    """Backward-compatible FAISS builder with enforced vector normalization."""
+    matrix, names = flatten_database_embeddings(database_faces)
+    faiss = import_faiss()
+    if faiss is None or matrix.size == 0:
         return None, None
 
+    index = faiss.IndexFlatL2(matrix.shape[1])
+    index.add(matrix)
+    return index, dict(enumerate(names))
 
-def who_is_it(encoding, database_faces, threshold=0.9, faiss_index=None, id_to_name=None):
-    """Nhận diện danh tính.
-    
-    Nếu có faiss_index thì dùng FAISS (nhanh), không thì dùng for-loop (đúng như cũ).
-    """
 
-    # --- Cách 1: FAISS (nhanh, dùng khi đã build index) ---
+def who_is_it(
+    encoding,
+    database_faces,
+    threshold=DEFAULT_DISTANCE_THRESHOLD,
+    faiss_index=None,
+    id_to_name=None,
+):
+    """Return the closest identity name or ``Unknown``."""
+    try:
+        query = normalize_embedding(encoding)
+    except EmbeddingError:
+        return UNKNOWN_IDENTITY
+
     if faiss_index is not None and id_to_name is not None:
         try:
-            import faiss
-            query = np.expand_dims(encoding.astype(np.float32), axis=0)
-            distances, indices = faiss_index.search(query, k=1)
-            min_dist = float(distances[0][0]) ** 0.5  # FAISS trả squared L2
-            best_idx = int(indices[0][0])
-            identity = id_to_name.get(best_idx, "Unknown")
-            
-            if min_dist > threshold:
-                return "Unknown"
-            return identity
-        except Exception as e:
-            print(f"FAISS search lỗi, fallback to for-loop: {e}")
+            squared_distances, indices = faiss_index.search(query.reshape(1, -1), 1)
+            index = int(indices[0][0])
+            distance = float(squared_distances[0][0]) ** 0.5
+            identity = id_to_name.get(index)
+            if identity is not None and np.isfinite(distance) and distance <= threshold:
+                return identity
+            return UNKNOWN_IDENTITY
+        except Exception as exc:
+            logger.warning("FAISS search failed; using exact NumPy fallback: %s", exc)
 
-    # --- Cách 2: For-loop (giống code gốc, luôn hoạt động) ---
-    min_dist = 100
-    identity = "Unknown"
-    
-    for name, embeddings_list in database_faces.items():
-        for db_emb in embeddings_list:
-            dist = np.linalg.norm(encoding - db_emb)
-            if dist < min_dist:
-                min_dist = dist
-                identity = name
-                
-    if min_dist > threshold: 
-        return "Unknown"
-    else:
-        return identity
+    best_identity = UNKNOWN_IDENTITY
+    best_distance = float("inf")
+    for username, embeddings in database_faces.items():
+        for embedding in embeddings:
+            try:
+                candidate = normalize_embedding(embedding)
+            except EmbeddingError:
+                continue
+            distance = float(np.linalg.norm(query - candidate))
+            if distance < best_distance:
+                best_distance = distance
+                best_identity = username
+
+    return best_identity if best_distance <= threshold else UNKNOWN_IDENTITY
+
+
+__all__ = [
+    "IdentityIndex",
+    "IdentityIndexError",
+    "IdentityIndexUnavailableError",
+    "MatchResult",
+    "UNKNOWN_IDENTITY",
+    "build_faiss_index",
+    "load_database",
+    "who_is_it",
+]

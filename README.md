@@ -47,10 +47,13 @@ Kiến trúc **Client — Server**: Frontend React gửi ảnh base64 lên Backe
        ▼
 [ FastAPI Backend ]
        │
-       ├─► Anti-Spoofing CNN ──► FAKE? → Reject
-       │         (face_verify_v1.keras)
-       │
-       └─► FaceNet Embedder ──► L2 Distance ──► Identity match?
+       └─► Detect exactly one face ──► Align & crop
+                    │
+                    ├─► Anti-Spoofing CNN ──► FAKE? → Reject
+                    │         (face_verify_v1.keras)
+                    │
+                    └─► FaceNet ──► L2 normalize ──► FAISS/NumPy search
+                                                    └─► Identity match?
                                                       │
                                       ┌───────────────┴───────────────┐
                                    Known                           Unknown
@@ -158,6 +161,10 @@ data/faces/
 └── bob/         ← ảnh 1.jpg, 2.jpg, ...
 ```
 
+Các ảnh đặt trực tiếp ở `data/faces/` không có username nên sẽ bị bỏ qua. Index danh tính
+được dựng thành snapshot khi backend khởi động; hãy khởi động lại backend sau khi thay đổi
+ảnh đăng ký.
+
 ### Bước 4 — Chạy ứng dụng
 
 **Terminal 1 — Backend:**
@@ -207,11 +214,8 @@ make help        # Xem toàn bộ lệnh
 
 ### 1. Hiệu suất tìm kiếm khuôn mặt `Đã cải tiến`
 - **Vấn đề:** Đang dùng vòng lặp `for` tính L2 distance từng cặp embedding. Khi có hàng nghìn user, tốc độ rất chậm.
-- **Cải tiến đã làm:** Tích hợp **FAISS** trong `verifier.py`. Nếu chưa cài, code tự **fallback về for-loop cũ** — hoàn toàn trong suốt.
-  ```bash
-  pip install faiss-cpu  # bật tính năng tìm kiếm nhanh
-  ```
-  > FAISS dùng IndexFlatL2 — tìm kiếm vector O(1) thay vì O(n), hỗ trợ hàng triệu vectors.
+- **Cải tiến đã làm:** Tích hợp **FAISS** (được cài cùng project). Nếu FAISS không khả dụng hoặc search lỗi, code dùng exact NumPy fallback với cùng metric L2.
+  > `IndexFlatL2` là exact search `O(N·d)`, nhưng được tối ưu native/SIMD. Với dữ liệu lớn hơn, có thể chuyển sang HNSW hoặc IVF sau khi benchmark.
 
 ### 2. Dữ liệu train còn hạn chế
 - **Vấn đề:** Dataset Anti-Spoofing tự thu thập nhỏ, ít đa dạng → model dễ nhầm khi ánh sáng yếu hoặc góc nghiêng.

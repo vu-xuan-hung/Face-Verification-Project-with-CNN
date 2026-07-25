@@ -1,0 +1,40 @@
+
+
+# --- codex-kit-managed-agents-start ---
+[agents.brainstormer]
+description = "Use this agent when you need to brainstorm software solutions, evaluate architectural approaches, or debate technical decisions before implementation. Examples: - <example>\n    Context: User wants to add a new feature to their application\n    user: \"I want to add real-time notifications to my web app\"\n    assistant: \"Let me use the brainstormer agent to explore the best approaches for implementing real-time notifications\"\n    <commentary>\n    The user needs architectural guidance for a new featu"
+config_file = "agents/brainstormer.toml"
+
+[agents.planner]
+description = "Use this agent when you need to research, analyze, and create comprehensive implementation plans for new features, system architectures, or complex technical solutions. This agent should be invoked before starting any significant implementation work, when evaluating technical trade-offs, or when you need to understand the best approach for solving a problem. Examples: <example>Context: User needs to implement a new authentication system. user: 'I need to add OAuth2 authentication to our app' ass"
+config_file = "agents/planner.toml"
+
+[agents.researcher]
+description = "Use this agent when you need to conduct comprehensive research on software development topics, including investigating new technologies, finding documentation, exploring best practices, or gathering information about plugins, packages, and open source projects. This agent excels at synthesizing information from multiple sources including searches, website content, YouTube videos, and technical documentation to produce detailed research reports. <example>Context: The user needs to research a new "
+config_file = "agents/researcher.toml"
+
+[agents.code_reviewer]
+description = "Comprehensive code review with scout-based edge case detection. Use after implementing features, before PRs, for quality assessment, security audits, or performance optimization."
+config_file = "agents/code_reviewer.toml"
+
+[agents.tester]
+description = "Use this agent when you need to validate code quality through testing, including running unit and integration tests, analyzing test coverage, validating error handling, checking performance requirements, or verifying build processes. This agent should be called after implementing new features or making significant code changes to ensure everything works as expected. Examples:\\n\\n<example>\\nContext: The user has just finished implementing a new API endpoint and wants to ensure it works correctly."
+config_file = "agents/tester.toml"
+
+[agents.debugger]
+description = "Use this agent when you need to investigate issues, analyze system behavior, diagnose performance problems, examine database structures, collect and analyze logs from servers or CI/CD pipelines, run tests for debugging purposes, or optimize system performance. This includes troubleshooting errors, identifying bottlenecks, analyzing failed deployments, investigating test failures, and creating diagnostic reports. Examples:\\n\\n<example>\\nContext: The user needs to investigate why an API endpoint i"
+config_file = "agents/debugger.toml"
+
+[agents.git_manager]
+description = "Stage, commit, and push code changes with conventional commits. Use when user says \"commit\", \"push\", or finishes a feature/fix."
+config_file = "agents/git_manager.toml"
+
+[agents.docs_manager]
+description = "Use this agent when you need to manage technical documentation, establish implementation standards, analyze and update existing documentation based on code changes, write or update Product Development Requirements (PDRs), organize documentation for developer productivity, or produce documentation summary reports. This includes tasks like reviewing documentation structure, ensuring docs are up-to-date with codebase changes, creating new documentation for features, and maintaining consistency acro"
+config_file = "agents/docs_manager.toml"
+# --- codex-kit-managed-agents-end ---
+
+# --- codex-kit-managed-features-start ---
+[features]
+hooks = true
+# --- codex-kit-managed-features-end ---

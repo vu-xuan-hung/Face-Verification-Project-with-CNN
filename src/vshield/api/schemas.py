@@ -7,10 +7,7 @@ of separating concerns (routes vs. data models vs. DB logic).
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Request bodies
@@ -22,6 +19,7 @@ class ImagePayload(BaseModel):
 
     image: str = Field(
         ...,
+        max_length=11_200_000,
         description=(
             "Data URI of the face crop, e.g. "
             "'data:image/jpeg;base64,<base64-string>'"
@@ -38,9 +36,9 @@ class PredictResponse(BaseModel):
     """Result of a single /predict call."""
 
     success: bool
-    username: Optional[str] = None
-    role: Optional[str] = None
-    message: Optional[str] = None
+    username: str | None = None
+    role: str | None = None
+    message: str | None = None
 
 
 class LoginLog(BaseModel):

@@ -1,10 +1,9 @@
 import sqlite3
-import os
 from datetime import datetime
 from pathlib import Path
 
 # Đường dẫn DB nằm ở root project
-_DB_DEFAULT = Path(__file__).resolve().parents[4] / "login_logs.db"
+_DB_DEFAULT = Path(__file__).resolve().parents[3] / "login_logs.db"
 
 def get_db_path():
     return str(_DB_DEFAULT)
@@ -13,7 +12,7 @@ def init_db(db_path=None):
     db_path = db_path or get_db_path()
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
+
     # Bảng log đăng nhập
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS login_logs (
@@ -23,7 +22,7 @@ def init_db(db_path=None):
             timestamp TEXT NOT NULL
         )
     ''')
-    
+
     # Bảng lưu thông tin user và role (CẢI TIẾN: không hardcode nữa)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -32,13 +31,13 @@ def init_db(db_path=None):
             role TEXT NOT NULL DEFAULT 'user'
         )
     ''')
-    
+
     # Seed admin mặc định nếu bảng trống
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
         cursor.execute("INSERT OR IGNORE INTO users (username, role) VALUES (?, ?)", ("hung", "admin"))
         print("Đã tạo user mặc định: hung (admin)")
-    
+
     conn.commit()
     conn.close()
 
@@ -50,7 +49,7 @@ def get_role(username, db_path=None):
     cursor.execute("SELECT role FROM users WHERE username = ?", (username,))
     row = cursor.fetchone()
     conn.close()
-    
+
     if row:
         return row[0]
     else:
@@ -88,22 +87,22 @@ def get_logs(username_filter=None, date_filter=None, db_path=None):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    
+
     query = "SELECT username, role, timestamp FROM login_logs WHERE 1=1"
     params = []
-    
+
     if username_filter:
         query += " AND username LIKE ?"
         params.append(f"%{username_filter}%")
-        
+
     if date_filter:
         query += " AND timestamp LIKE ?"
         params.append(f"{date_filter}%")
-        
+
     query += " ORDER BY id DESC"
-    
+
     cursor.execute(query, params)
     rows = cursor.fetchall()
     conn.close()
-    
+
     return [dict(row) for row in rows]

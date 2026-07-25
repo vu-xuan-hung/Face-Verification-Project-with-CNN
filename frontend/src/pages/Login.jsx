@@ -34,14 +34,10 @@ export default function Login() {
   const captureAndResize = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
-    
-    // Crop center square
-    const size = Math.min(video.videoWidth, video.videoHeight);
-    const startX = (video.videoWidth - size) / 2;
-    const startY = (video.videoHeight - size) / 2;
-    
-    ctx.drawImage(video, startX, startY, size, size, 0, 0, 128, 128);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const base64Image = canvas.toDataURL('image/jpeg', 0.9);
     setPreview(base64Image);
     return base64Image;
@@ -90,14 +86,13 @@ export default function Login() {
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        const size = Math.min(img.width, img.height);
-        const startX = (img.width - size) / 2;
-        const startY = (img.height - size) / 2;
-        
         const canvas = canvasRef.current;
+        const scale = Math.min(1, 1024 / Math.max(img.width, img.height));
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, startX, startY, size, size, 0, 0, 128, 128);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         
         const base64Image = canvas.toDataURL('image/jpeg', 0.9);
         setPreview(base64Image);
@@ -115,7 +110,7 @@ export default function Login() {
       
       <div className="video-wrapper">
         <video ref={videoRef} className="webcam" autoPlay playsInline muted></video>
-        <canvas ref={canvasRef} width="128" height="128" className="hidden"></canvas>
+        <canvas ref={canvasRef} width="480" height="480" className="hidden"></canvas>
         <div className="scanning-frame"></div>
       </div>
 
@@ -147,7 +142,7 @@ export default function Login() {
       
       {preview && (
         <div className="preview-container">
-          <p>Image request payload (128x128):</p>
+          <p>Detected-face input preview:</p>
           <img src={preview} alt="Preview" className="preview-img" />
         </div>
       )}

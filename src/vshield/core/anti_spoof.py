@@ -1,6 +1,10 @@
-import os
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
+
+
+class AntiSpoofingError(RuntimeError):
+    """Raised when anti-spoofing cannot produce a trustworthy result."""
 
 # --- Patch các lớp để loại bỏ quantization_config ---
 def patch_layer(cls):
@@ -11,7 +15,7 @@ def patch_layer(cls):
     def new_from_config(cls, config):
         config.pop("quantization_config", None)
         return original_from_config(config)
-    
+
     cls.from_config = classmethod(new_from_config)
     return cls
 
@@ -26,7 +30,7 @@ for cls in layer_classes:
     try:
         patch_layer(cls)
     except AttributeError:
-        pass  
+        pass
 # ------------------------------------------------
 
 def load_anti_spoofing_model(model_path="artifacts/models/face_verify_v1.keras"):
@@ -40,8 +44,24 @@ def load_anti_spoofing_model(model_path="artifacts/models/face_verify_v1.keras")
 
 def predict_is_real(model, face_batch):
     if model is None:
-        return True # Fallback nếu không có model
-    
-    prediction = model.predict(face_batch, verbose=0)
-    prob = prediction[0][0]
-    return prob > 0.5
+        raise AntiSpoofingError("Anti-spoofing model is unavailable")
+
+    try:
+        prediction = model.predict(face_batch, verbose=0)
+    except Exception as exc:
+        raise AntiSpoofingError("Anti-spoofing inference failed") from exc
+
+    try:
+        scores = np.asarray(prediction)
+        is_numeric = np.issubdtype(scores.dtype, np.number)
+        is_complex = np.issubdtype(scores.dtype, np.complexfloating)
+        if scores.size != 1 or not is_numeric or is_complex:
+            raise ValueError("expected exactly one score")
+        score = float(scores.reshape(-1)[0])
+    except Exception as exc:
+        raise AntiSpoofingError("Anti-spoofing returned an invalid score") from exc
+
+    if not np.isfinite(score) or not 0.0 <= score <= 1.0:
+        raise AntiSpoofingError("Anti-spoofing returned an invalid score")
+
+    return score > 0.5
