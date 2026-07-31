@@ -2,6 +2,21 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
 
+from vshield.models.augmentation import RandomGamma, RandomJpegCompression
+from vshield.models.color_augmentation import BgrColorAugmentation
+from vshield.models.lighting_normalization import RandomHistogramNormalization
+
+CUSTOM_AUGMENTATION_LAYERS = {
+    "RandomGamma": RandomGamma,
+    "vshield>RandomGamma": RandomGamma,
+    "RandomJpegCompression": RandomJpegCompression,
+    "vshield>RandomJpegCompression": RandomJpegCompression,
+    "BgrColorAugmentation": BgrColorAugmentation,
+    "vshield>BgrColorAugmentation": BgrColorAugmentation,
+    "RandomHistogramNormalization": RandomHistogramNormalization,
+    "vshield>RandomHistogramNormalization": RandomHistogramNormalization,
+}
+
 
 class AntiSpoofingError(RuntimeError):
     """Raised when anti-spoofing cannot produce a trustworthy result."""
@@ -35,7 +50,10 @@ for cls in layer_classes:
 
 def load_anti_spoofing_model(model_path="artifacts/models/face_verify_v1.keras"):
     try:
-        model = tf.keras.models.load_model(model_path)
+        model = tf.keras.models.load_model(
+            model_path,
+            custom_objects=CUSTOM_AUGMENTATION_LAYERS,
+        )
         print("Anti-spoofing model loaded.")
         return model
     except Exception as e:

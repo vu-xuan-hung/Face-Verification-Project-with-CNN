@@ -1,0 +1,12 @@
+version: 1
+metadata_probe:
+  max_auc: 0.60
+  max_auc_ci_high: 0.65
+  max_accuracy_above_majority: 0.10
+  bootstrap_iterations: 500
+category_probe:
+  fields: [subject_id, session_id, device_id]
+  max_weighted_purity: 0.80
+policy:
+  failure_action: block_dataset_release
+  note: "Passing these probes does not prove absence of every shortcut."
