@@ -1,0 +1,1 @@
+sample_id,relative_path,split,label,subject_id,session_id,clip_id,device_id,attack_type,attack_instrument_id,capture_time,sha256,dhash,height,width,bytes,brightness,contrast,blur,exact_component_id,near_component_id,status,reason_code

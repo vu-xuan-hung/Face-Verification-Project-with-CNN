@@ -1,0 +1,16 @@
+version: v2
+status: pending_data_release
+dataset_root: ../data/All
+release_manifest: ../artifacts/registry/dataset-v2-manifest.json
+verify_hashes: true
+protocols:
+  train: ../data/protocols/train-v2.csv
+  val: ../data/protocols/val-v2.csv
+  test: ../data/protocols/test-v2.csv
+nc: 2
+names: [fake, real]
+preprocessing:
+  color_space: BGR
+  shape: [128, 128, 3]
+  dtype: float32
+  normalization: x/255

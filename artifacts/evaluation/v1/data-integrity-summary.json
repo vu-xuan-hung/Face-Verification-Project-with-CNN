@@ -1,0 +1,31 @@
+{
+  "dataset": "data/SplitData",
+  "samples": 2415,
+  "provenance_complete": 0,
+  "quarantined": 2415,
+  "exact_duplicate_groups_all": 467,
+  "exact_duplicate_groups_cross_split": 264,
+  "exact_duplicate_references_cross_split": 746,
+  "near_duplicate_method": {
+    "hash": "OpenCV grayscale dHash 8x8",
+    "candidate_threshold": "Hamming distance <= 4",
+    "candidate_pairs_all": 13263,
+    "candidate_pairs_cross_split": 5998,
+    "status": "unconfirmed_candidates"
+  },
+  "shortcut_probes": {
+    "metadata_auc": 1.0,
+    "low_resolution_auc": 1.0,
+    "color_histogram_auc": 1.0,
+    "background_only_auc": 1.0,
+    "center_only_auc": 1.0
+  },
+  "release_status": "blocked",
+  "blocking_reasons": [
+    "MISSING_PROVENANCE",
+    "NON_EMPTY_SPLITS",
+    "LABEL_COVERAGE",
+    "SHORTCUT_PROBES",
+    "SHORTCUT_REPORT_MANIFEST_MISMATCH"
+  ]
+}

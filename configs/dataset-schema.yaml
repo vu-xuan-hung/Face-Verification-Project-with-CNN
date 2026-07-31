@@ -1,0 +1,31 @@
+version: 2
+label_map:
+  0: fake
+  1: real
+required_fields:
+  - sample_id
+  - relative_path
+  - label
+  - subject_id
+  - session_id
+  - clip_id
+  - device_id
+  - sha256
+  - dhash
+group_fields:
+  - subject_id
+  - session_id
+  - clip_id
+  - device_id
+  - attack_instrument_id
+duplicate_policy:
+  exact_hash: sha256
+  perceptual_hash: dhash
+  perceptual_hamming_threshold: 4
+  unresolved_near_duplicates: keep_in_one_split
+  conflicting_labels: quarantine
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+  immutable_test: true

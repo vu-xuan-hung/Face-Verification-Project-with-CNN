@@ -1,0 +1,3 @@
+subject_id,session_id,clip_id,device_id,label,attack_type,attack_instrument_id,lighting,background,capture_date,planned_samples,collected_samples,status
+EXAMPLE_SUBJECT,EXAMPLE_SESSION,EXAMPLE_CLIP,EXAMPLE_DEVICE,1,bona_fide,,indoor_even,neutral,YYYY-MM-DD,0,0,template_only
+EXAMPLE_SUBJECT,EXAMPLE_SESSION,EXAMPLE_CLIP,EXAMPLE_DEVICE,0,screen_replay,EXAMPLE_INSTRUMENT,indoor_even,neutral,YYYY-MM-DD,0,0,template_only

@@ -1,4 +1,7 @@
-path: ./data/SplitData
+version: 1
+status: invalid_for_model_evaluation
+invalid_manifest: ../data/manifests/dataset-v1-invalid.json
+path: ../data/SplitData
 train: train/images
 val: val/images
 test: test/images

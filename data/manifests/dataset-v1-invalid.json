@@ -1,0 +1,34 @@
+{
+  "dataset_version": "v1",
+  "status": "invalid_for_model_evaluation",
+  "invalidated_at": "2026-07-30T00:00:00+07:00",
+  "reason_codes": [
+    "EXACT_DUPLICATE_CROSS_SPLIT",
+    "PERCEPTUAL_DUPLICATE_CROSS_SPLIT",
+    "METADATA_SHORTCUT",
+    "NON_GROUPED_SPLIT"
+  ],
+  "evidence": {
+    "exact_duplicate_groups_cross_split": 264,
+    "image_references_in_exact_groups": 746,
+    "dhash_distance_lte_4_cross_split_pairs": 1567,
+    "opencv_dhash_conservative_candidates_all_splits": 13263,
+    "opencv_dhash_conservative_candidates_cross_split": 5998,
+    "metadata_only_test_accuracy": 0.995850622406639,
+    "metadata_only_test_auc": 1.0
+  },
+  "near_duplicate_note": "The 1,567 figure is the original audit implementation. The new OpenCV dHash candidate generator intentionally uses a different resize/grayscale path and yields 5,998 cross-split candidates. Candidates are not called confirmed duplicates; all require review or conservative same-component grouping.",
+  "allowed_uses": [
+    "audit reproduction",
+    "regression fixture",
+    "historical debugging"
+  ],
+  "prohibited_uses": [
+    "model selection",
+    "threshold selection",
+    "early stopping",
+    "production accuracy claims",
+    "model promotion"
+  ],
+  "audit_report": "plans/vshield-ai-ml-audit-2026-07-30.md"
+}
