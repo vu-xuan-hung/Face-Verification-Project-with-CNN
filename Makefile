@@ -1,4 +1,4 @@
-.PHONY: install dev train test format help
+.PHONY: install dev train collect collect-real collect-fake test format help
 
 install:
 	uv sync --all-extras
@@ -13,7 +13,13 @@ train:
 	uv run python src/vshield/training/train.py
 
 collect:
-	uv run python scripts/collect_data.py
+	uv run python -m vshield.data.collector
+
+collect-real:
+	uv run python -m vshield.data.collector --class-id 1 --output data/DataCollect/real
+
+collect-fake:
+	uv run python -m vshield.data.collector --class-id 0 --output data/DataCollect/fake
 
 test:
 	uv run pytest tests/
