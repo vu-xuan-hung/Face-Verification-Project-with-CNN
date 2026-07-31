@@ -1,0 +1,104 @@
+{
+  "passed": false,
+  "protocol_status": "invalid_historical",
+  "manifest_sha256": "fb04621a555a255bc6c53fa2bec1ebf910992c481d1d950e9e2ac1c7bdb3825c",
+  "failures": [
+    "AUC_ABOVE_LIMIT",
+    "AUC_CI_ABOVE_LIMIT",
+    "ACCURACY_ABOVE_MAJORITY_LIMIT",
+    "LOW_RESOLUTION_AUC_ABOVE_LIMIT",
+    "LOW_RESOLUTION_AUC_CI_ABOVE_LIMIT",
+    "LOW_RESOLUTION_ACCURACY_ABOVE_MAJORITY_LIMIT",
+    "COLOR_HISTOGRAM_AUC_ABOVE_LIMIT",
+    "COLOR_HISTOGRAM_AUC_CI_ABOVE_LIMIT",
+    "COLOR_HISTOGRAM_ACCURACY_ABOVE_MAJORITY_LIMIT",
+    "BACKGROUND_ONLY_AUC_ABOVE_LIMIT",
+    "BACKGROUND_ONLY_AUC_CI_ABOVE_LIMIT",
+    "BACKGROUND_ONLY_ACCURACY_ABOVE_MAJORITY_LIMIT",
+    "HISTORICAL_INVALID_PROTOCOL"
+  ],
+  "probes": [
+    {
+      "feature_set": "metadata",
+      "accuracy": 0.995850622406639,
+      "auc": 1.0,
+      "auc_ci_low": 0.9999999999999999,
+      "auc_ci_high": 1.0,
+      "majority_accuracy": 0.5062240663900415,
+      "sample_count": 241.0
+    },
+    {
+      "feature_set": "brightness",
+      "accuracy": 0.975103734439834,
+      "auc": 0.9970381595261056,
+      "auc_ci_low": 0.9929563253356729,
+      "auc_ci_high": 0.9998622499399434,
+      "majority_accuracy": 0.5062240663900415,
+      "sample_count": 241.0
+    },
+    {
+      "feature_set": "dimensions",
+      "accuracy": 0.8630705394190872,
+      "auc": 0.9276071084171374,
+      "auc_ci_low": 0.8918195729106713,
+      "auc_ci_high": 0.9622623335861139,
+      "majority_accuracy": 0.5062240663900415,
+      "sample_count": 241.0
+    }
+  ],
+  "pixel_probes": [
+    {
+      "feature_set": "low_resolution",
+      "accuracy": 1.0,
+      "auc": 1.0,
+      "auc_ci_low": 0.9999999999999999,
+      "auc_ci_high": 1.0,
+      "majority_accuracy": 0.5062240663900415,
+      "sample_count": 241.0
+    },
+    {
+      "feature_set": "color_histogram",
+      "accuracy": 1.0,
+      "auc": 1.0,
+      "auc_ci_low": 0.9999999999999999,
+      "auc_ci_high": 1.0,
+      "majority_accuracy": 0.5062240663900415,
+      "sample_count": 241.0
+    },
+    {
+      "feature_set": "background_only",
+      "accuracy": 1.0,
+      "auc": 1.0,
+      "auc_ci_low": 0.9999999999999999,
+      "auc_ci_high": 1.0,
+      "majority_accuracy": 0.5062240663900415,
+      "sample_count": 241.0
+    },
+    {
+      "feature_set": "center_only",
+      "accuracy": 1.0,
+      "auc": 1.0,
+      "auc_ci_low": 0.9999999999999999,
+      "auc_ci_high": 1.0,
+      "majority_accuracy": 0.5062240663900415,
+      "sample_count": 241.0
+    }
+  ],
+  "purity": [
+    {
+      "field": "subject_id",
+      "coverage": 0.0,
+      "weighted_purity": 1.0
+    },
+    {
+      "field": "session_id",
+      "coverage": 0.0,
+      "weighted_purity": 1.0
+    },
+    {
+      "field": "device_id",
+      "coverage": 0.0,
+      "weighted_purity": 1.0
+    }
+  ]
+}

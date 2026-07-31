@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: vshield-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount thư mục data và artifacts để lưu trữ ngoài container
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./login_logs.db:/app/login_logs.db
+    environment:
+      - TF_ENABLE_ONEDNN_OPTS=0
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vshield-frontend
+    ports:
+      - "5173:80" # Map port 5173 của host vào port 80 của container (nginx)
+    depends_on:
+      - backend
+    restart: unless-stopped

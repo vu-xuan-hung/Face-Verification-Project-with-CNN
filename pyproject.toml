@@ -1,0 +1,138 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# ---------------------------------------------------------------------------
+# Project metadata  (PEP 621)
+# ---------------------------------------------------------------------------
+[project]
+name = "vshield"
+version = "1.0.0"
+description = "Advanced face authentication with anti-spoofing and FaceNet one-shot verification."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Vu Xuan Hung" }]
+requires-python = ">=3.10"
+
+keywords = ["face-recognition", "anti-spoofing", "deep-learning", "facenet", "fastapi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+]
+
+# ---------------------------------------------------------------------------
+# Core runtime dependencies
+# ---------------------------------------------------------------------------
+dependencies = [
+    # Deep learning
+    "tensorflow>=2.16,<3.0",
+    "keras>=3.0",
+    "keras-facenet>=0.3",
+    "faiss-cpu>=1.14,<2.0",
+    # Computer vision
+    "opencv-python>=4.9,<5.0",
+    "opencv-contrib-python>=4.9,<5.0",
+    "cvzone==1.6.1",
+    "mediapipe==0.10.21",
+    "pillow>=10.0",
+    # Web server
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.0",
+    "python-multipart>=0.0.9",
+    # Utilities
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "scikit-learn>=1.4",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+    "rich>=13.0",
+]
+
+# ---------------------------------------------------------------------------
+# Optional dependency groups
+# ---------------------------------------------------------------------------
+[project.optional-dependencies]
+
+# Extra training utilities
+training = [
+    "matplotlib>=3.8",
+    "pandas>=2.2",
+    "kaggle>=1.6",
+    "scikit-learn>=1.4",
+]
+
+# Developer toolchain
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",            # async test client for FastAPI
+    "ruff>=0.4",              # linter + formatter (replaces flake8 + black + isort)
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+]
+
+# ---------------------------------------------------------------------------
+# CLI entry-points
+# ---------------------------------------------------------------------------
+[project.scripts]
+vshield-serve  = "vshield.api.app:app"
+vshield-train  = "vshield.training.train:train"
+vshield-collect = "vshield.data.collector:DataCollector"
+
+# ---------------------------------------------------------------------------
+# Hatchling — src layout
+# ---------------------------------------------------------------------------
+[tool.hatch.build.targets.wheel]
+packages = ["src/vshield"]
+
+# ---------------------------------------------------------------------------
+# uv — workspace settings
+# ---------------------------------------------------------------------------
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff — linting & formatting (replaces flake8 + black + isort)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "N"]
+ignore = ["E501", "B008"]  # line-too-long handled by formatter; B008 for FastAPI
+
+[tool.ruff.lint.isort]
+known-first-party = ["vshield"]
+
+# ---------------------------------------------------------------------------
+# Mypy — static type checking
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+strict = false
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+log_cli = true
+log_cli_level = "INFO"

@@ -1,0 +1,16 @@
+version: 1
+required_provenance: [subject_id, session_id, clip_id, device_id]
+split_names: [train, val, test]
+max_cross_split_exact_hashes: 0
+max_cross_split_exact_components: 0
+max_cross_split_near_components: 0
+max_cross_split_subjects: 0
+max_cross_split_sessions: 0
+max_cross_split_clips: 0
+max_cross_split_devices: 0
+require_shortcut_report: true
+require_non_empty_splits: true
+promotion:
+  require_dataset_manifest: true
+  require_model_manifest: true
+  overwrite_artifacts: false

@@ -1,0 +1,61 @@
+{
+  "passed": false,
+  "released_samples": 0,
+  "split_counts": {
+    "train": 0,
+    "val": 0,
+    "test": 0
+  },
+  "failures": [
+    {
+      "gate": "NON_EMPTY_SPLITS",
+      "counts": {
+        "train": 0,
+        "val": 0,
+        "test": 0
+      }
+    },
+    {
+      "gate": "LABEL_COVERAGE",
+      "split": "train",
+      "labels": []
+    },
+    {
+      "gate": "LABEL_COVERAGE",
+      "split": "val",
+      "labels": []
+    },
+    {
+      "gate": "LABEL_COVERAGE",
+      "split": "test",
+      "labels": []
+    },
+    {
+      "gate": "SHORTCUT_PROBES",
+      "failures": [
+        "AUC_ABOVE_LIMIT",
+        "AUC_CI_ABOVE_LIMIT",
+        "ACCURACY_ABOVE_MAJORITY_LIMIT",
+        "LOW_RESOLUTION_AUC_ABOVE_LIMIT",
+        "LOW_RESOLUTION_AUC_CI_ABOVE_LIMIT",
+        "LOW_RESOLUTION_ACCURACY_ABOVE_MAJORITY_LIMIT",
+        "COLOR_HISTOGRAM_AUC_ABOVE_LIMIT",
+        "COLOR_HISTOGRAM_AUC_CI_ABOVE_LIMIT",
+        "COLOR_HISTOGRAM_ACCURACY_ABOVE_MAJORITY_LIMIT",
+        "BACKGROUND_ONLY_AUC_ABOVE_LIMIT",
+        "BACKGROUND_ONLY_AUC_CI_ABOVE_LIMIT",
+        "BACKGROUND_ONLY_ACCURACY_ABOVE_MAJORITY_LIMIT",
+        "HISTORICAL_INVALID_PROTOCOL"
+      ]
+    },
+    {
+      "gate": "SHORTCUT_REPORT_MANIFEST_MISMATCH"
+    }
+  ],
+  "warnings": [
+    {
+      "gate": "QUARANTINED_ROWS",
+      "count": 2415
+    }
+  ]
+}

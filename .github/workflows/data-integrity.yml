@@ -1,0 +1,43 @@
+name: Data integrity
+
+on:
+  pull_request:
+    paths:
+      - "src/vshield/data/**"
+      - "src/vshield/evaluation/**"
+      - "scripts/**dataset**"
+      - "scripts/shortcut-baselines.py"
+      - "tests/data/**"
+      - "tests/evaluation/**"
+      - "configs/*gates.yaml"
+  workflow_dispatch:
+
+jobs:
+  integrity-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --extra dev
+      - run: uv run pytest tests/data tests/evaluation
+      - name: Lint data integrity implementation
+        run: >-
+          uv run ruff check
+          src/vshield/data/integrity.py
+          src/vshield/data/deduplication.py
+          src/vshield/data/grouped_split.py
+          src/vshield/data/release_audit.py
+          src/vshield/data/loader.py
+          src/vshield/evaluation
+          scripts/audit-dataset-release.py
+          scripts/build-dataset-manifest.py
+          scripts/deduplicate-dataset.py
+          scripts/evaluate-pad.py
+          scripts/promote-model.py
+          scripts/score-pad.py
+          scripts/shortcut-baselines.py
+          scripts/split-dataset-grouped.py
+          tests/data
+          tests/evaluation
