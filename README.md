@@ -13,6 +13,43 @@
 
 </div>
 
+## Dataset v2 integrity workflow
+
+The historical split is marked `invalid_for_model_evaluation`. Do not use it
+for model selection, threshold calibration, or accuracy claims.
+
+Build a v2 candidate only after completing
+`data/manifests/collection-matrix-v2.csv` with real subject/session/clip/device
+provenance:
+
+```bash
+uv run python scripts/build-dataset-manifest.py \
+  --input data/All \
+  --metadata data/manifests/capture-metadata-v2.csv \
+  --output data/manifests/dataset-v2.csv
+
+uv run python scripts/deduplicate-dataset.py \
+  --manifest data/manifests/dataset-v2.csv \
+  --output data/manifests/dataset-v2-deduplicated.csv \
+  --candidates data/manifests/near-duplicate-candidates-v2.csv
+
+uv run python scripts/split-dataset-grouped.py \
+  --manifest data/manifests/dataset-v2-deduplicated.csv \
+  --output-dir data/protocols \
+  --quarantine data/manifests/quarantine-v2.csv \
+  --output-manifest data/manifests/dataset-v2-split.csv
+
+uv run python scripts/shortcut-baselines.py \
+  --manifest data/manifests/dataset-v2-split.csv \
+  --dataset-root data/All \
+  --output artifacts/evaluation/v2/shortcut-report.json
+```
+
+Training remains blocked until `configs/data-v2.yaml` references a released
+protocol and the release audit passes. Threshold selection is performed from
+validation scores by `scripts/evaluate-pad.py`; test scores are never used by
+the training entry point.
+
 ---
 
 ## 📖 Giới thiệu
@@ -144,10 +181,10 @@ python scripts/collect_data.py --class-id 1 --output data/DataCollect/real
 python scripts/collect_data.py --class-id 0 --output data/DataCollect/fake
 
 # 3. Chia dataset (train/val/test)
-python scripts/split_data.py
+uv run python scripts/split_data.py --help
 
 # 4. Train model
-make train
+# Training is blocked until the Dataset v2 integrity workflow below passes.
 ```
 
 ### Bước 3 — Đăng ký khuôn mặt người dùng
