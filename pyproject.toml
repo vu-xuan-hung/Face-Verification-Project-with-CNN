@@ -35,10 +35,10 @@ dependencies = [
     "keras-facenet>=0.3",
     "faiss-cpu>=1.14,<2.0",
     # Computer vision
-    "opencv-python>=4.9",
-    "opencv-contrib-python>=4.9",
-    "cvzone>=1.6",
-    "mediapipe>=0.10",
+    "opencv-python>=4.9,<5.0",
+    "opencv-contrib-python>=4.9,<5.0",
+    "cvzone==1.6.1",
+    "mediapipe==0.10.21",
     "pillow>=10.0",
     # Web server
     "fastapi>=0.111",
