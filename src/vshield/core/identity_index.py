@@ -8,15 +8,16 @@ from dataclasses import dataclass
 import numpy as np
 
 from vshield.core.embedder import EmbeddingError, normalize_embedding
+from vshield.core.identity_index_support import (
+    IdentityIndexError,
+    flatten_database_embeddings,
+    import_faiss,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DISTANCE_THRESHOLD = 0.9
 DEFAULT_MIN_MARGIN = 0.05
-
-
-class IdentityIndexError(RuntimeError):
-    """Base error for identity index failures."""
 
 
 class IdentityIndexUnavailableError(IdentityIndexError):
@@ -32,36 +33,12 @@ class MatchResult:
     runner_up_distance: float | None = None
 
 
-def flatten_database_embeddings(
-    database_faces: dict[str, list[np.ndarray]],
-) -> tuple[np.ndarray, list[str]]:
-    vectors: list[np.ndarray] = []
-    names: list[str] = []
+@dataclass(frozen=True)
+class RankedIdentity:
+    """One identity in an unthresholded nearest-neighbour ranking."""
 
-    for username, embeddings in database_faces.items():
-        if not username:
-            raise IdentityIndexError("Enrollment username cannot be empty")
-        for embedding in embeddings:
-            try:
-                vectors.append(normalize_embedding(embedding))
-            except EmbeddingError as exc:
-                raise IdentityIndexError(
-                    f"Invalid enrollment embedding for {username}"
-                ) from exc
-            names.append(username)
-
-    if not vectors:
-        return np.empty((0, 512), dtype=np.float32), []
-    return np.ascontiguousarray(np.stack(vectors), dtype=np.float32), names
-
-
-def import_faiss():
-    try:
-        import faiss
-
-        return faiss
-    except ImportError:
-        return None
+    username: str
+    distance: float
 
 
 class IdentityIndex:
@@ -118,6 +95,28 @@ class IdentityIndex:
     def size(self) -> int:
         return len(self._names)
 
+    def ranked_identities(
+        self,
+        embedding: np.ndarray,
+        *,
+        k: int = 5,
+    ) -> list[RankedIdentity]:
+        """Return up to ``k`` unique identities ordered by nearest template."""
+        if k < 1:
+            raise ValueError("k must be at least 1")
+        if not self.available:
+            raise IdentityIndexUnavailableError("No enrolled face embeddings are available")
+
+        try:
+            query = normalize_embedding(embedding)
+        except EmbeddingError as exc:
+            raise IdentityIndexError("Query embedding is invalid") from exc
+
+        candidates = self._search_candidates(query, self.size)
+        per_identity = self._minimum_identity_distances(candidates)
+        ranked = sorted(per_identity.items(), key=lambda item: (item[1], item[0]))
+        return [RankedIdentity(username, distance) for username, distance in ranked[:k]]
+
     def search(self, embedding: np.ndarray) -> MatchResult | None:
         if not self.available:
             raise IdentityIndexUnavailableError("No enrolled face embeddings are available")
@@ -172,12 +171,7 @@ class IdentityIndex:
         ]
 
     def _decide(self, candidates: list[tuple[str, float]]) -> MatchResult | None:
-        per_identity: dict[str, float] = {}
-        for username, distance in candidates:
-            current = per_identity.get(username)
-            if current is None or distance < current:
-                per_identity[username] = distance
-
+        per_identity = self._minimum_identity_distances(candidates)
         ranked = sorted(per_identity.items(), key=lambda item: item[1])
         if not ranked:
             raise IdentityIndexError("Vector search returned no candidates")
@@ -191,3 +185,14 @@ class IdentityIndex:
             return None
 
         return MatchResult(username, best_distance, runner_up)
+
+    @staticmethod
+    def _minimum_identity_distances(
+        candidates: list[tuple[str, float]],
+    ) -> dict[str, float]:
+        per_identity: dict[str, float] = {}
+        for username, distance in candidates:
+            current = per_identity.get(username)
+            if current is None or distance < current:
+                per_identity[username] = distance
+        return per_identity
