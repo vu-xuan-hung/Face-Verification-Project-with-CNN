@@ -99,7 +99,7 @@ def scan_skills(base_path: Path) -> List[Dict]:
             skill_name = f"{parent_name}/{skill_name}"
 
         try:
-            content = skill_file.read_text()
+            content = skill_file.read_text(encoding='utf-8')
             frontmatter = extract_frontmatter(content)
 
             description = frontmatter.get('description', '')
@@ -224,7 +224,10 @@ def main():
     # Output YAML to ck-help scripts directory
     output_path = Path('.agents/skills/ck-help/scripts/skills_data.yaml')
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(yaml.dump(skills, allow_unicode=True, default_flow_style=False))
+    output_path.write_text(
+        yaml.dump(skills, allow_unicode=True, default_flow_style=False),
+        encoding='utf-8',
+    )
     print(f"\n✓ Saved metadata to {output_path}")
 
     # Legacy location now points to canonical source to avoid data drift.
