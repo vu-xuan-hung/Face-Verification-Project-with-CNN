@@ -20,8 +20,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import cv2
@@ -33,16 +33,17 @@ from cvzone.FaceDetectionModule import FaceDetector
 # ---------------------------------------------------------------------------
 # Defaults (can be overridden via CLI)
 # ---------------------------------------------------------------------------
-_BLUR_THRESHOLD = 35      # Laplacian var below this → blurry → skip
-_BLINK_THRESHOLD = 0.20   # EAR below this → blink detected
-_CONFIDENCE = 0.80        # Minimum face detection confidence
-_EXPAND_PCT = 10          # Face bounding-box expansion in %
+_BLUR_THRESHOLD = 35  # Laplacian var below this → blurry → skip
+_BLINK_THRESHOLD = 0.20  # EAR below this → blink detected
+_CONFIDENCE = 0.80  # Minimum face detection confidence
+_EXPAND_PCT = 10  # Face bounding-box expansion in %
 _CAM_W, _CAM_H = 640, 480
 
 
 # ---------------------------------------------------------------------------
 # Eye Aspect Ratio
 # ---------------------------------------------------------------------------
+
 
 def _ear(eye: list[np.ndarray]) -> float:
     """Compute the Eye Aspect Ratio for blink detection."""
@@ -56,6 +57,7 @@ def _ear(eye: list[np.ndarray]) -> float:
 # ---------------------------------------------------------------------------
 # Collector
 # ---------------------------------------------------------------------------
+
 
 class DataCollector:
     """Webcam-based face crop collector with liveness heuristics.
@@ -73,7 +75,7 @@ class DataCollector:
     """
 
     # MediaPipe face mesh landmark indices for left/right eye
-    _LEFT_EYE_IDX  = [33, 160, 158, 133, 153, 144]
+    _LEFT_EYE_IDX = [33, 160, 158, 133, 153, 144]
     _RIGHT_EYE_IDX = [362, 385, 387, 263, 373, 380]
 
     def __init__(
@@ -150,7 +152,7 @@ class DataCollector:
         if w <= 0 or h <= 0:
             return
 
-        face_crop = frame[y:y + h, x:x + w]
+        face_crop = frame[y : y + h, x : x + w]
         if face_crop.size == 0:
             return
 
@@ -176,7 +178,10 @@ class DataCollector:
         cvzone.putTextRect(
             display,
             f"{'SHARP' if is_sharp else 'BLUR'} {blur_val:.0f}",
-            (x, y), scale=1, offset=8, colorR=color,
+            (x, y),
+            scale=1,
+            offset=8,
+            colorR=color,
         )
 
         if is_sharp:
@@ -187,19 +192,20 @@ class DataCollector:
             lbl_path.write_text(f"{self.class_id} {xc:.6f} {yc:.6f} {wn:.6f} {hn:.6f}\n")
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="V-Shield face data collector.")
-    p.add_argument("--class-id", type=int, default=0, choices=[0, 1],
-                   help="0=fake, 1=real")
-    p.add_argument("--output", type=str, default="data/raw",
-                   help="Output directory for images and labels.")
+    p.add_argument("--class-id", type=int, choices=[0, 1], required=True, help="0=fake, 1=real")
+    p.add_argument(
+        "--output", type=str, required=True, help="Output directory for images and labels."
+    )
     p.add_argument("--blur-threshold", type=float, default=_BLUR_THRESHOLD)
     p.add_argument("--confidence", type=float, default=_CONFIDENCE)
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
-if __name__ == "__main__":
-    args = _parse_args()
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the collector with command-line arguments."""
+    args = _parse_args(argv)
     collector = DataCollector(
         class_id=args.class_id,
         output_dir=args.output,
@@ -207,3 +213,7 @@ if __name__ == "__main__":
         confidence=args.confidence,
     )
     collector.run()
+
+
+if __name__ == "__main__":
+    main()

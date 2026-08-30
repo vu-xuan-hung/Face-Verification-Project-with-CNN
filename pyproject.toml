@@ -34,6 +34,7 @@ dependencies = [
     "keras>=3.0",
     "keras-facenet>=0.3",
     "faiss-cpu>=1.14,<2.0",
+    "chromadb>=1.5.9,<2.0",
     # Computer vision
     "opencv-python>=4.9,<5.0",
     "opencv-contrib-python>=4.9,<5.0",
@@ -83,7 +84,7 @@ dev = [
 [project.scripts]
 vshield-serve  = "vshield.api.app:app"
 vshield-train  = "vshield.training.train:train"
-vshield-collect = "vshield.data.collector:DataCollector"
+vshield-collect = "vshield.data.collector:main"
 
 # ---------------------------------------------------------------------------
 # Hatchling — src layout

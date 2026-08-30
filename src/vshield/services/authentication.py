@@ -14,6 +14,7 @@ from vshield.core.anti_spoof import (
     load_anti_spoofing_model,
     predict_is_real,
 )
+from vshield.core.chroma_identity_index import build_preferred_identity_index
 from vshield.core.embedder import EmbeddingError, FaceEmbedder
 from vshield.core.face_preprocessor import (
     FacePreprocessingError,
@@ -149,8 +150,10 @@ def build_default_authentication_service(project_root: str | Path) -> Authentica
     def encode_enrollment(path: str | Path) -> np.ndarray:
         return face_embedder.encode_file(path, face_preprocessor=face_preprocessor)
 
-    database_faces = load_database(root / "data" / "faces", encode_file=encode_enrollment)
-    identity_index = IdentityIndex(database_faces)
+    identity_index = build_preferred_identity_index(
+        root / "data" / "chroma",
+        lambda: load_database(root / "data" / "faces", encode_file=encode_enrollment),
+    )
     return AuthenticationService(
         face_preprocessor=face_preprocessor,
         anti_spoof_model=anti_spoof_model,

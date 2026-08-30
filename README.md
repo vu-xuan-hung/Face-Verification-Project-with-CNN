@@ -89,7 +89,8 @@ Kiến trúc **Client — Server**: Frontend React gửi ảnh base64 lên Backe
                     ├─► Anti-Spoofing CNN ──► FAKE? → Reject
                     │         (face_verify_v1.keras)
                     │
-                    └─► FaceNet ──► L2 normalize ──► FAISS/NumPy search
+                    └─► FaceNet ──► L2 normalize ──► ChromaDB local search
+                                                    └─► FAISS/NumPy fallback
                                                     └─► Identity match?
                                                       │
                                       ┌───────────────┴───────────────┐
@@ -175,10 +176,10 @@ artifacts/models/face_verify_v1.keras
 **Option B — Tự train lại:**
 ```bash
 # 1. Thu thập ảnh khuôn mặt Real (class_id=1)
-python scripts/collect_data.py --class-id 1 --output data/DataCollect/real
+uv run python scripts/collect_data.py --class-id 1 --output data/DataCollect/real
 
 # 2. Thu thập ảnh giả mạo Fake (class_id=0)
-python scripts/collect_data.py --class-id 0 --output data/DataCollect/fake
+uv run python scripts/collect_data.py --class-id 0 --output data/DataCollect/fake
 
 # 3. Chia dataset (train/val/test)
 uv run python scripts/split_data.py --help
@@ -251,8 +252,9 @@ make help        # Xem toàn bộ lệnh
 
 ### 1. Hiệu suất tìm kiếm khuôn mặt `Đã cải tiến`
 - **Vấn đề:** Đang dùng vòng lặp `for` tính L2 distance từng cặp embedding. Khi có hàng nghìn user, tốc độ rất chậm.
-- **Cải tiến đã làm:** Tích hợp **FAISS** (được cài cùng project). Nếu FAISS không khả dụng hoặc search lỗi, code dùng exact NumPy fallback với cùng metric L2.
-  > `IndexFlatL2` là exact search `O(N·d)`, nhưng được tối ưu native/SIMD. Với dữ liệu lớn hơn, có thể chuyển sang HNSW hoặc IVF sau khi benchmark.
+- **Cải tiến đã làm:** Dùng **ChromaDB PersistentClient** tại `data/chroma/` làm vector store local ưu tiên. FAISS/NumPy giữ vai trò fallback khi Chroma không khởi tạo được.
+  > Chroma lưu FaceNet embedding 512-D và metadata identity tối thiểu; ảnh khuôn mặt không được lưu trong vector store.
+  > Collection hiện được version theo contract `FaceNet-512 + L2`. Prototype chưa tự đồng bộ việc thêm/xóa user sau lần seed đầu tiên; cần rebuild local store và restart backend khi gallery thay đổi. Embedding là dữ liệu sinh trắc nhạy cảm, vì vậy `.gitignore` không thay thế mã hóa, phân quyền filesystem hoặc chính sách lưu giữ dữ liệu.
 
 ### 2. Dữ liệu train còn hạn chế
 - **Vấn đề:** Dataset Anti-Spoofing tự thu thập nhỏ, ít đa dạng → model dễ nhầm khi ánh sáng yếu hoặc góc nghiêng.
@@ -271,6 +273,7 @@ make help        # Xem toàn bộ lệnh
 | Backend | FastAPI | Async, tự sinh docs, nhanh hơn Flask |
 | ML Framework | TensorFlow / Keras | Dễ build CNN, nhiều tài liệu |
 | Face Embedding | keras-facenet | Pretrained, không cần retrain khi thêm user |
+| Vector Database | ChromaDB local | Lưu/query embedding bền vững qua restart |
 | Computer Vision | OpenCV | Xử lý ảnh nhanh, dùng rộng rãi |
 | Hand Tracking | MediaPipe | Blink detection (EAR) cho data collector |
 | Frontend | React + Vite | HMR nhanh, code tổ chức tốt |

@@ -2,9 +2,9 @@
 
 ## Snapshot
 
-- Review date: 2026-08-11.
+- Review date: 2026-08-29.
 - Project: face authentication with presentation attack detection (PAD).
-- Architecture: React/Vite client, FastAPI backend, TensorFlow/Keras models, FAISS or NumPy identity search, SQLite role/login audit.
+- Architecture: React/Vite client, FastAPI backend, TensorFlow/Keras models, local persistent Chroma identity search with FAISS/NumPy fallback, SQLite role/login audit.
 - Current evidence status: application and evaluation tooling exist; trustworthy PAD and identity-retrieval benchmark results are not yet available.
 
 ## System Goal
@@ -20,13 +20,13 @@ flowchart LR
     PRE --> PAD[Anti-spoof CNN]
     PAD -->|fake or unavailable| REJECT[Reject]
     PAD -->|real| EMB[FaceNet + L2 normalization]
-    EMB --> IDX[FAISS IndexFlatL2\nor exact NumPy]
+    EMB --> IDX[Local ChromaDB HNSW L2\nFAISS/NumPy fallback]
     IDX -->|threshold + margin pass| ROLE[SQLite role lookup]
     ROLE --> LOG[SQLite login log]
     IDX -->|unknown or ambiguous| REJECT
 ```
 
-The anti-spoof stage is fail-closed: FaceNet and identity search run only after a real presentation result. The identity index is an immutable startup snapshot of `data/faces/<username>/*`; changing enrollment images requires a backend restart.
+The anti-spoof stage is fail-closed: FaceNet and identity search run only after a real presentation result. Chroma persists the first validated enrollment snapshot under `data/chroma/` and is queried live for each identity request. A seeded in-memory snapshot is retained only as a same-process fallback if a Chroma query fails.
 
 ## Main Components
 
@@ -41,6 +41,7 @@ The anti-spoof stage is fail-closed: FaceNet and identity search run only after 
 | FaceNet embedding | `src/vshield/core/embedder.py` |
 | Enrollment loading | `src/vshield/core/verifier.py` |
 | Identity search | `src/vshield/core/identity_index.py` |
+| Persistent vector store | `src/vshield/core/chroma_identity_index.py`, ChromaDB local |
 | PAD evaluation | `src/vshield/evaluation/pad_metrics.py` |
 | Identity retrieval evaluation | `src/vshield/evaluation/recognition_metrics.py` |
 | PAD training | `src/vshield/training/train.py` |
@@ -54,14 +55,15 @@ The anti-spoof stage is fail-closed: FaceNet and identity search run only after 
 4. The preprocessor requires exactly one face and produces model-specific crops.
 5. The PAD CNN classifies the presentation. Fake, invalid, or unavailable states fail closed.
 6. FaceNet produces a 512-dimensional embedding; code validates and L2-normalizes it.
-7. `IdentityIndex.search()` finds the nearest identity using L2 distance, then applies a distance threshold and runner-up margin.
+7. ChromaDB queries the nearest stored FaceNet templates using L2 distance, then the identity index applies the existing distance threshold and runner-up margin. FAISS/NumPy is the startup fallback.
 8. A successful identity is mapped to a role and written to the SQLite login log.
 
 ## Identity Gallery Versus SQLite
 
 Two stores have different responsibilities:
 
-- `data/faces/<username>/*`: biometric enrollment gallery used to build embeddings and the FAISS/NumPy index.
+- `data/faces/<username>/*`: biometric enrollment gallery used to seed embeddings when Chroma is empty.
+- `data/chroma/`: ignored local persistent store containing FaceNet embeddings and identity metadata, not face images.
 - `login_logs.db`: relational data for username roles and successful login events.
 
 Precision@5 and Recall@5 evaluate retrieval from the enrollment gallery. They do not evaluate SQLite queries or login-log filtering. At the review snapshot, `data/faces/` contains no username subdirectories, so repository-level retrieval values must remain `N/A`.
@@ -107,7 +109,7 @@ Frontend routes include login, admin dashboard, and user dashboard. The admin sc
 ## Technology Stack
 
 - Python 3.10+, `uv`, src-layout packaging.
-- TensorFlow/Keras, keras-facenet, FAISS CPU.
+- TensorFlow/Keras, keras-facenet, ChromaDB local, FAISS CPU.
 - OpenCV, MediaPipe, Pillow, NumPy, SciPy, scikit-learn.
 - FastAPI, Uvicorn, Pydantic.
 - React, Vite, React Router.
@@ -117,7 +119,9 @@ Frontend routes include login, admin dashboard, and user dashboard. The admin sc
 ## Current Limitations
 
 - The anti-spoof model artifact is not tracked in Git; missing or invalid model state makes authentication unavailable.
-- No enrollment API; enrollment is filesystem-based and requires restart.
+- No enrollment API or automatic reconciliation; after the initial seed, adding, changing, revoking, or deleting an identity requires an explicit Chroma rebuild and backend restart.
+- Chroma stores biometric embeddings and identity metadata locally without application-level encryption or a retention policy; `.gitignore` only prevents accidental Git commits.
+- Authentication requests all locally stored templates so the runner-up margin is not based on a partial ANN result. This favors decision correctness over scalability and still requires measured Chroma-versus-exact parity.
 - No valid released PAD v2 dataset or locked benchmark.
 - No versioned recognition gallery/probe protocol or real Precision@5/Recall@5 result.
 - Exact `IndexFlatL2` scales linearly with template count.
