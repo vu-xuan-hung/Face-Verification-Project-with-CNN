@@ -48,8 +48,8 @@ QUY TẮC BẰNG CHỨNG — BẮT BUỘC
 7. Không đưa username thật, ảnh mặt, embedding, login record, bí mật hoặc dữ liệu cá nhân vào báo cáo.
 
 SỰ THẬT NỀN CẦN KIỂM TRA LẠI TỪ FILE
-- V-Shield là hệ thống xác thực khuôn mặt client-server: React/Vite -> FastAPI -> face preprocessing -> anti-spoof CNN -> FaceNet embedding chuẩn hóa L2 -> FAISS IndexFlatL2 hoặc NumPy exact search -> SQLite role/login log.
-- SQLite chỉ lưu role và login audit. Gallery nhận diện nằm ở `data/faces/<username>/*` và được dựng thành snapshot khi backend khởi động.
+- V-Shield là hệ thống xác thực khuôn mặt client-server: React/Vite -> FastAPI -> face preprocessing -> anti-spoof CNN -> FaceNet embedding chuẩn hóa L2 -> ChromaDB persistent local ưu tiên, FAISS/NumPy fallback -> SQLite role/login log.
+- SQLite chỉ lưu role và login audit. `data/faces/<username>/*` chỉ seed Chroma khi local collection còn trống; sau đó Chroma là kho được query trực tiếp. Repo chưa có enrollment API hay tự động đồng bộ/revoke khi filesystem gallery thay đổi.
 - Runtime fail-closed: anti-spoof không khả dụng hoặc không qua thì không chạy FaceNet/identity search.
 - Dataset v1 không hợp lệ để chọn model, threshold hoặc công bố performance.
 - Các số cần đối chiếu nguồn trước khi dùng: 2.415 mẫu lịch sử bị quarantine; 264 nhóm exact duplicate xuyên split với 746 references; audit lịch sử có 1.567 cặp near-duplicate dHash <= 4; scan OpenCV bảo thủ mới có 5.998 candidates chờ review, không phải 5.998 confirmed duplicates; metadata-only baseline đạt 99,59% accuracy và ROC-AUC 1,0.
