@@ -72,6 +72,7 @@ data/Fake/
 data/Real/
 data/SplitData/
 data/faces/
+data/chroma/
 # Keep data/ directory itself (via .gitkeep)
 
 # -----------------------------------------------------------------------------

@@ -271,3 +271,27 @@ def test_default_service_skips_enrollment_when_anti_spoof_model_is_missing(
     assert service.anti_spoof_model is None
     assert not service.identity_index.available
     embedder.encode_file.assert_not_called()
+
+
+def test_default_service_prefers_local_chroma_when_pad_is_available(
+    tmp_path,
+    monkeypatch,
+):
+    identity_index = Mock()
+    index_builder = Mock(return_value=identity_index)
+
+    monkeypatch.setattr(
+        authentication,
+        "load_anti_spoofing_model",
+        Mock(return_value=Mock()),
+    )
+    monkeypatch.setattr(authentication, "FacePreprocessor", Mock(return_value=Mock()))
+    monkeypatch.setattr(authentication, "FaceEmbedder", Mock(return_value=Mock()))
+    monkeypatch.setattr(authentication, "build_preferred_identity_index", index_builder)
+
+    service = authentication.build_default_authentication_service(tmp_path)
+
+    persist_path, enrollment_loader = index_builder.call_args.args
+    assert persist_path == tmp_path.resolve() / "data" / "chroma"
+    assert callable(enrollment_loader)
+    assert service.identity_index is identity_index
