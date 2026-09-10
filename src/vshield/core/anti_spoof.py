@@ -1,85 +1,93 @@
-import numpy as np
-import tensorflow as tf
-from tensorflow.keras import layers
+"""Structured pretrained PAD boundary. No production fallback to legacy Keras."""
 
-from vshield.models.augmentation import RandomGamma, RandomJpegCompression
-from vshield.models.color_augmentation import BgrColorAugmentation
-from vshield.models.lighting_normalization import RandomHistogramNormalization
-
-CUSTOM_AUGMENTATION_LAYERS = {
-    "RandomGamma": RandomGamma,
-    "vshield>RandomGamma": RandomGamma,
-    "RandomJpegCompression": RandomJpegCompression,
-    "vshield>RandomJpegCompression": RandomJpegCompression,
-    "BgrColorAugmentation": BgrColorAugmentation,
-    "vshield>BgrColorAugmentation": BgrColorAugmentation,
-    "RandomHistogramNormalization": RandomHistogramNormalization,
-    "vshield>RandomHistogramNormalization": RandomHistogramNormalization,
-}
+import math
+from dataclasses import asdict, dataclass
+from enum import Enum
+from pathlib import Path
 
 
-class AntiSpoofingError(RuntimeError):
-    """Raised when anti-spoofing cannot produce a trustworthy result."""
+class PadStatus(str, Enum):
+    REAL = "REAL"
+    FAKE = "FAKE"
+    UNCERTAIN = "UNCERTAIN"
+    ERROR = "ERROR"
 
-# --- Patch các lớp để loại bỏ quantization_config ---
-def patch_layer(cls):
-    original_from_config = getattr(cls, "from_config", None)
-    if not original_from_config:
-        return cls
 
-    def new_from_config(cls, config):
-        config.pop("quantization_config", None)
-        return original_from_config(config)
+@dataclass(frozen=True)
+class PadResult:
+    status: PadStatus
+    score: float | None = None
+    class_index: int | None = None
+    model_version: str = "unavailable"
+    threshold: float | None = None
+    reason: str = "PAD_UNAVAILABLE"
 
-    cls.from_config = classmethod(new_from_config)
-    return cls
+    @property
+    def is_real(self):
+        return self.status is PadStatus.REAL
 
-layer_classes = [
-    layers.Dense, layers.Conv2D, layers.DepthwiseConv2D, layers.BatchNormalization,
-    layers.Add, layers.Multiply, layers.Reshape, layers.Activation,
-    layers.GlobalAveragePooling2D, layers.GlobalMaxPooling2D, layers.Flatten,
-    layers.Dropout, layers.InputLayer, layers.ZeroPadding2D, layers.MaxPooling2D, layers.AveragePooling2D,
-]
+    def to_dict(self):
+        return {**asdict(self), "status": self.status.value, "is_real": self.is_real}
 
-for cls in layer_classes:
+
+class PadRejectedError(RuntimeError):
+    def __init__(self, result):
+        self.result = result
+        super().__init__(result.reason)
+
+
+class UnavailablePad:
+    ready = False
+
+    def __init__(self, reason="PAD_UNAVAILABLE"):
+        self.reason = reason
+        self.model_version = "unavailable"
+
+    def predict(self, *, image, bbox):
+        return PadResult(PadStatus.ERROR, reason=self.reason)
+
+
+def build_pad_service(config_path=None):
+    from vshield.core.minifasnet_onnx import MiniFASNetONNX
+
+    config_path = config_path or Path(__file__).resolve().parents[3] / "configs/ai-models.yaml"
     try:
-        patch_layer(cls)
-    except AttributeError:
-        pass
-# ------------------------------------------------
+        return MiniFASNetONNX.from_config(config_path)
+    except Exception:
+        # Readiness and API expose only a safe code, never source paths/stack traces.
+        return UnavailablePad()
 
-def load_anti_spoofing_model(model_path="artifacts/models/face_verify_v1.keras"):
+
+def check_pad(pad, image, bbox):
+    if pad is None or getattr(pad, "ready", False) is not True:
+        return PadResult(PadStatus.ERROR, reason="PAD_UNAVAILABLE")
     try:
-        model = tf.keras.models.load_model(
-            model_path,
-            custom_objects=CUSTOM_AUGMENTATION_LAYERS,
-        )
-        print("Anti-spoofing model loaded.")
-        return model
-    except Exception as e:
-        print("Cannot load model:", e)
-        return None
+        result = pad.predict(image=image, bbox=bbox)
+        if not isinstance(result, PadResult) or not isinstance(result.status, PadStatus):
+            raise ValueError("Invalid PAD result")
+        if result.status is not PadStatus.ERROR:
+            if (type(result.class_index) is not int or result.class_index not in {0, 1, 2}
+                    or result.score is None or not math.isfinite(result.score)
+                    or not 0 <= result.score <= 1
+                    or result.threshold is None or not math.isfinite(result.threshold)
+                    or not 0 < result.threshold < 1):
+                raise ValueError("Invalid PAD score")
+        if result.is_real and (result.class_index != 1 or result.score < result.threshold):
+            raise ValueError("Inconsistent PAD acceptance")
+        return result
+    except Exception:
+        return PadResult(PadStatus.ERROR, reason="MODEL_ERROR")
 
-def predict_is_real(model, face_batch):
-    if model is None:
-        raise AntiSpoofingError("Anti-spoofing model is unavailable")
 
-    try:
-        prediction = model.predict(face_batch, verbose=0)
-    except Exception as exc:
-        raise AntiSpoofingError("Anti-spoofing inference failed") from exc
+def require_real(pad, image, bbox):
+    result = check_pad(pad, image, bbox)
+    if not result.is_real:
+        raise PadRejectedError(result)
+    return result
 
-    try:
-        scores = np.asarray(prediction)
-        is_numeric = np.issubdtype(scores.dtype, np.number)
-        is_complex = np.issubdtype(scores.dtype, np.complexfloating)
-        if scores.size != 1 or not is_numeric or is_complex:
-            raise ValueError("expected exactly one score")
-        score = float(scores.reshape(-1)[0])
-    except Exception as exc:
-        raise AntiSpoofingError("Anti-spoofing returned an invalid score") from exc
 
-    if not np.isfinite(score) or not 0.0 <= score <= 1.0:
-        raise AntiSpoofingError("Anti-spoofing returned an invalid score")
+def load_anti_spoofing_model(model_path):
+    """Explicit offline compatibility for historical training/evaluation tools only."""
+    from vshield.core.legacy_keras_pad import load_anti_spoofing_model as legacy_load
 
-    return score > 0.5
+    return legacy_load(model_path)

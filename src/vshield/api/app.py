@@ -6,19 +6,21 @@ import base64
 import binascii
 import csv
 import io
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import cv2
 import numpy as np
-from fastapi import Depends, FastAPI, Response
+from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 
 from vshield.api import database, sessions
+from vshield.api.readiness import readiness
 from vshield.api.request_limits import EnrollmentBodyLimit
 from vshield.api.schemas import ImagePayload
 from vshield.api.user_routes import router as user_router
@@ -69,11 +71,20 @@ def decode_image(data_uri: str) -> np.ndarray:
     return image
 
 
-def _failure(status_code: int, message: str) -> JSONResponse:
+def _failure(status_code: int, message: str, *, code=None, metadata=None) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
-        content={"success": False, "message": message},
+        content={"success": False, "message": message, **(metadata or {}),
+                 **({"code": code} if code else {})},
     )
+
+
+def safe_log_access_event(**kwargs):
+    try:
+        return database.log_access_event(**kwargs)
+    except Exception as exc:
+        logging.getLogger(__name__).error("Safe access log dispatch failed: %s", exc)
+        return None
 
 
 def create_app(
@@ -99,6 +110,7 @@ def create_app(
                 auth_service.face_preprocessor,
                 auth_service.face_embedder,
                 identity_index=getattr(auth_service, "identity_index", None),
+                pad_service=getattr(auth_service, "anti_spoof_model", None),
             )
         yield
 
@@ -131,44 +143,179 @@ def create_app(
     application.include_router(user_router)
 
     @application.post("/predict")
-    def predict(data: ImagePayload, response: Response):
+    def predict(data: ImagePayload, request: Request, response: Response):
         response.headers["Cache-Control"] = "no-store"
+        source = request.client.host if request.client else None
+        request_id = request.headers.get("x-request-id")
+
         try:
             image = decode_image(data.image)
         except ValueError as exc:
-            return _failure(400, str(exc))
+            safe_log_access_event(
+                event_type="ACCESS_DENIED",
+                result="DENIED",
+                reason_code="INVALID_IMAGE",
+                request_id=request_id,
+                source=source,
+            )
+            return _failure(400, str(exc), code="INVALID_IMAGE")
 
         try:
             result: AuthenticationResult = application.state.authentication_service.authenticate(
                 image
             )
         except Exception:
-            return _failure(503, "Authentication service unavailable")
+            safe_log_access_event(
+                event_type="ACCESS_DENIED",
+                result="DENIED",
+                reason_code="MODEL_ERROR",
+                request_id=request_id,
+                source=source,
+            )
+            return _failure(503, "Authentication service unavailable", code="MODEL_ERROR")
+
+        metadata = result.metadata()
+        pad = result.pad
+        pad_status = pad.status.value if pad else None
+        pad_version = pad.model_version if pad else None
+        spoof_score = pad.score if pad else None
 
         if result.status is AuthenticationStatus.INVALID_FACE:
-            return _failure(422, result.message)
+            safe_log_access_event(
+                event_type="ACCESS_DENIED",
+                result="DENIED",
+                reason_code=result.code or "INVALID_FACE",
+                request_id=request_id,
+                source=source,
+            )
+            return _failure(422, result.message, metadata=metadata)
         if result.status is AuthenticationStatus.SPOOF:
-            return _failure(403, result.message)
+            safe_log_access_event(
+                event_type="SPOOF_ATTEMPT",
+                result="DENIED",
+                reason_code=result.code or "SPOOF",
+                recognition_distance=None,
+                spoof_score=spoof_score,
+                pad_status=pad_status,
+                pad_model_version=pad_version,
+                request_id=request_id,
+                source=source,
+            )
+            return _failure(403, result.message, metadata=metadata)
         if result.status is AuthenticationStatus.UNKNOWN:
-            return _failure(403, result.message)
+            safe_log_access_event(
+                event_type="UNKNOWN_FACE",
+                result="DENIED",
+                reason_code="UNKNOWN",
+                recognition_distance=result.distance,
+                spoof_score=spoof_score,
+                pad_status=pad_status,
+                pad_model_version=pad_version,
+                request_id=request_id,
+                source=source,
+            )
+            return _failure(403, result.message, metadata=metadata)
+        if result.status is AuthenticationStatus.AMBIGUOUS:
+            safe_log_access_event(
+                event_type="AMBIGUOUS_FACE",
+                result="DENIED",
+                reason_code="AMBIGUOUS",
+                recognition_distance=result.distance,
+                spoof_score=spoof_score,
+                pad_status=pad_status,
+                pad_model_version=pad_version,
+                request_id=request_id,
+                source=source,
+            )
+            return _failure(403, result.message, metadata=metadata)
         if result.status is AuthenticationStatus.UNAVAILABLE:
-            return _failure(503, result.message)
+            if result.code == "PAD_UNAVAILABLE":
+                evt = "PAD_UNAVAILABLE"
+            elif (pad and pad.status.value == "error") or result.code in ("PAD_ERROR", "MODEL_ERROR"):
+                evt = "PAD_ERROR"
+            else:
+                evt = "ACCESS_DENIED"
+            safe_log_access_event(
+                event_type=evt,
+                result="DENIED",
+                reason_code=result.code or evt,
+                recognition_distance=result.distance,
+                spoof_score=spoof_score,
+                pad_status=pad_status,
+                pad_model_version=pad_version,
+                request_id=request_id,
+                source=source,
+            )
+            return _failure(503, result.message, metadata=metadata)
         if result.status is not AuthenticationStatus.AUTHENTICATED or not (
             result.username or result.user_id
         ):
+            safe_log_access_event(
+                event_type="ACCESS_DENIED",
+                result="DENIED",
+                reason_code="INVALID_RESULT",
+                request_id=request_id,
+                source=source,
+            )
             return _failure(503, "Authentication service returned an invalid result")
+
+        resolved_user_id = result.user_id
+        if resolved_user_id is None and result.username:
+            account = database.get_account(result.username)
+            if account:
+                resolved_user_id = account["id"]
 
         try:
             session = sessions.create_session(result.username, user_id=result.user_id)
         except PermissionError as exc:
-            return _failure(403, str(exc))
+            safe_log_access_event(
+                event_type="USER_DISABLED",
+                result="DENIED",
+                reason_code="USER_DISABLED",
+                user_id=resolved_user_id,
+                recognition_distance=result.distance,
+                spoof_score=spoof_score,
+                pad_status=pad_status,
+                pad_model_version=pad_version,
+                request_id=request_id,
+                source=source,
+            )
+            return _failure(403, str(exc), code="USER_DISABLED", metadata=metadata)
         except Exception:
+            safe_log_access_event(
+                event_type="ACCESS_DENIED",
+                result="DENIED",
+                reason_code="DATABASE_ERROR",
+                user_id=resolved_user_id,
+                recognition_distance=result.distance,
+                request_id=request_id,
+                source=source,
+            )
             return _failure(503, "Login database unavailable")
+
+        safe_log_access_event(
+            event_type="ACCESS_GRANTED",
+            result="GRANTED",
+            reason_code="SUCCESS",
+            user_id=session["user_id"],
+            recognition_distance=result.distance,
+            spoof_score=spoof_score,
+            pad_status=pad_status,
+            pad_model_version=pad_version,
+            request_id=request_id,
+            source=source,
+        )
 
         return {
             "success": True,
+            **metadata,
             **session,
         }
+
+    @application.get("/health/ready")
+    def health_ready():
+        status = readiness(application.state.authentication_service)
+        return JSONResponse(status, status_code=200 if status["ready"] else 503)
 
     @application.get("/auth/me")
     def me(response: Response, user=Depends(sessions.current_user)):
@@ -200,6 +347,92 @@ def create_app(
             media_type="text/csv",
             headers={"Content-Disposition": "attachment; filename=logs_export.csv"},
         )
+
+    @application.get("/access-logs", dependencies=[Depends(sessions.require_admin)])
+    def list_access_logs(
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+        event_type: str | None = None,
+        result: str | None = None,
+        username: str | None = None,
+        user_id: int | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ):
+        return database.get_access_logs(
+            user_id=user_id,
+            username=username,
+            event_type=event_type,
+            result=result,
+            start_time=start_time,
+            end_time=end_time,
+            limit=limit,
+            offset=offset,
+        )
+
+    @application.get("/access-logs/me")
+    def my_access_logs(
+        user=Depends(sessions.current_user),
+        limit: int = Query(50, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+    ):
+        # user_id is derived strictly from the authenticated session, never client input
+        return database.get_access_logs(
+            user_id=user["id"],
+            limit=limit,
+            offset=offset,
+        )
+
+    @application.get("/access-logs/export", dependencies=[Depends(sessions.require_admin)])
+    def export_access_logs(
+        event_type: str | None = None,
+        result: str | None = None,
+        username: str | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ):
+        data = database.get_access_logs(
+            username=username,
+            event_type=event_type,
+            result=result,
+            start_time=start_time,
+            end_time=end_time,
+            limit=500,
+            offset=0,
+        )
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "id", "timestamp", "user_id", "username", "event_type",
+            "result", "reason_code", "recognition_distance",
+            "spoof_score", "pad_status", "pad_model_version", "source"
+        ])
+        for row in data["items"]:
+            writer.writerow([
+                row["id"],
+                row["timestamp"],
+                row["user_id"] or "",
+                row["username"] or "",
+                row["event_type"],
+                row["result"],
+                row["reason_code"] or "",
+                row["recognition_distance"] if row["recognition_distance"] is not None else "",
+                row["spoof_score"] if row["spoof_score"] is not None else "",
+                row["pad_status"] or "",
+                row["pad_model_version"] or "",
+                row["source"] or "",
+            ])
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=access_logs_export.csv"},
+        )
+
+    @application.get("/dashboard/stats", dependencies=[Depends(sessions.require_admin)])
+    def dashboard_stats():
+        return database.get_dashboard_stats()
+
 
     return application
 

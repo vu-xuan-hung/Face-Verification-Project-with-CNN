@@ -48,10 +48,16 @@ class ManagedIdentityIndex:
         return self._index.size
 
     def search(self, embedding):
+        result = self.search_decision(embedding)
+        if result.decision == "GALLERY_UNAVAILABLE":
+            raise IdentityIndexUnavailableError("No enrolled face embeddings are available")
+        return result.match
+
+    def search_decision(self, embedding):
         with self._lock:
             for _ in range(2):
                 self.refresh()
-                result = self._index.search(embedding)
+                result = self._index.search_decision(embedding)
                 if database.gallery_revision(self.db_path) == self._revision:
                     return result
             raise IdentityIndexUnavailableError("Gallery changed during recognition; retry")

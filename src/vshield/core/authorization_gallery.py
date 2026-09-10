@@ -11,6 +11,16 @@ from vshield.core.identity_index_support import IdentityIndexError
 EMBEDDING_CONTRACT = "facenet-512-l2-bgr-v1"
 
 
+def enrollment_provenance(manifest):
+    """Read missing historical evidence as unverified; never rewrite old files."""
+    verified = (manifest.get("liveness_verified") is True
+                and manifest.get("enrollment_provenance") == "minifasnet_v2"
+                and bool(manifest.get("pad_model_version")))
+    return {"liveness_verified": verified,
+            "enrollment_provenance": "minifasnet_v2" if verified else "legacy_unverified",
+            "pad_model_version": manifest.get("pad_model_version") if verified else None}
+
+
 def file_digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 

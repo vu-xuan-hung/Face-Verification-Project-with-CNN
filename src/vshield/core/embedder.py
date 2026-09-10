@@ -58,6 +58,11 @@ class FaceEmbedder:
                         raise EmbeddingError("Cannot load FaceNet model") from exc
         return self._model
 
+    @property
+    def ready(self):
+        """Readiness observes lazy loading; it never downloads weights itself."""
+        return self._model is not None
+
     def encode(self, frame: np.ndarray) -> np.ndarray:
         if not isinstance(frame, np.ndarray) or frame.ndim != 3 or frame.shape[2] != 3:
             raise EmbeddingError("Expected a BGR face crop with three channels")

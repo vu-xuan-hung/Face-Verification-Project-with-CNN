@@ -1,12 +1,13 @@
 """SQLite accounts and login audit; permissions never come from the client."""
 
+import logging
 import re
 import sqlite3
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
-from vshield.api.migrations import migrate_users
+from vshield.api.migrations import migrate_access_logs, migrate_users
 from vshield.api.roles import ROLES, normalize_role
 
 _DB_DEFAULT = Path(__file__).resolve().parents[3] / "login_logs.db"
@@ -60,6 +61,7 @@ def init_db(db_path=None):
             FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE)""")
         conn.execute("CREATE INDEX IF NOT EXISTS sessions_user ON sessions(username)")
         migrate_users(conn)
+        migrate_access_logs(conn)
 
 
 def get_account(username, db_path=None):
@@ -175,3 +177,162 @@ def get_logs(username_filter=None, date_filter=None, db_path=None):
         params.append(f"{date_filter}%")
     with closing(connect(db_path)) as conn:
         return [dict(row) for row in conn.execute(query + " ORDER BY id DESC", params)]
+
+
+def log_access_event(
+    *,
+    event_type: str,
+    result: str,
+    user_id: int | None = None,
+    reason_code: str | None = None,
+    recognition_distance: float | None = None,
+    spoof_score: float | None = None,
+    pad_status: str | None = None,
+    pad_model_version: str | None = None,
+    request_id: str | None = None,
+    source: str | None = None,
+    timestamp: str | None = None,
+    db_path: str | None = None,
+) -> int | None:
+    """Persistent access event logger for all authentication outcomes.
+
+    Fail-closed security invariant: If log persistence fails, log error/warning,
+    NEVER let logging failure alter the security decision or flip a denial to allow.
+    """
+    try:
+        with closing(connect(db_path)) as conn, conn:
+            cursor = conn.execute(
+                """INSERT INTO access_logs (
+                    user_id, event_type, result, reason_code,
+                    recognition_distance, spoof_score, pad_status,
+                    pad_model_version, request_id, source, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, coalesce(?, datetime('now')))""",
+                (
+                    user_id,
+                    event_type,
+                    result,
+                    reason_code,
+                    recognition_distance,
+                    spoof_score,
+                    pad_status,
+                    pad_model_version,
+                    request_id,
+                    source,
+                    timestamp,
+                ),
+            )
+            return cursor.lastrowid
+    except Exception as exc:
+        logging.getLogger(__name__).error("Failed to persist access log: %s", exc)
+        return None
+
+
+def get_access_logs(
+    *,
+    user_id: int | None = None,
+    username: str | None = None,
+    event_type: str | None = None,
+    result: str | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    db_path: str | None = None,
+) -> dict:
+    query_base = """
+        FROM access_logs l
+        LEFT JOIN users u ON l.user_id = u.id
+        WHERE 1=1
+    """
+    params = []
+    conditions = []
+    if user_id is not None:
+        conditions.append("l.user_id = ?")
+        params.append(user_id)
+    if username:
+        conditions.append("u.username LIKE ?")
+        params.append(f"%{username}%")
+    if event_type:
+        conditions.append("l.event_type = ?")
+        params.append(event_type)
+    if result:
+        conditions.append("l.result = ?")
+        params.append(result)
+    if start_time:
+        conditions.append("l.timestamp >= ?")
+        params.append(start_time)
+    if end_time:
+        conditions.append("l.timestamp <= ?")
+        params.append(end_time)
+
+    where_clause = ""
+    if conditions:
+        where_clause = " AND " + " AND ".join(conditions)
+
+    with closing(connect(db_path)) as conn:
+        total = conn.execute("SELECT COUNT(*) " + query_base + where_clause, params).fetchone()[0]
+        select_clause = """
+            SELECT l.id, l.user_id, coalesce(u.username, '') AS username, coalesce(u.name, '') AS name,
+                   l.event_type, l.result, l.reason_code, l.recognition_distance, l.spoof_score,
+                   l.pad_status, l.pad_model_version, l.request_id, l.source,
+                   l.timestamp
+        """
+        rows = conn.execute(
+            select_clause + query_base + where_clause + " ORDER BY l.id DESC LIMIT ? OFFSET ?",
+            params + [max(1, min(limit, 500)), max(0, offset)],
+        ).fetchall()
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [dict(r) for r in rows],
+        }
+
+def get_dashboard_stats(db_path: str | None = None) -> dict:
+    with closing(connect(db_path)) as conn:
+        total_users = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE status != 'DELETED'"
+        ).fetchone()[0]
+        total_admins = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE role IN ('ADMIN', 'SUPER_ADMIN') AND status != 'DELETED'"
+        ).fetchone()[0]
+
+        today_clause = "(date(timestamp) = date('now') OR date(timestamp) = date('now', 'localtime'))"
+
+        recognitions_today = conn.execute(
+            f"SELECT COUNT(*) FROM access_logs WHERE {today_clause}"
+        ).fetchone()[0]
+        granted_today = conn.execute(
+            f"SELECT COUNT(*) FROM access_logs WHERE result = 'GRANTED' AND {today_clause}"
+        ).fetchone()[0]
+        denied_today = conn.execute(
+            f"SELECT COUNT(*) FROM access_logs WHERE result = 'DENIED' AND {today_clause}"
+        ).fetchone()[0]
+        unknown_today = conn.execute(
+            f"SELECT COUNT(*) FROM access_logs WHERE event_type = 'UNKNOWN_FACE' AND {today_clause}"
+        ).fetchone()[0]
+        spoofs_today = conn.execute(
+            f"SELECT COUNT(*) FROM access_logs WHERE event_type = 'SPOOF_ATTEMPT' AND {today_clause}"
+        ).fetchone()[0]
+
+        recent_activity = conn.execute(
+            """SELECT date(timestamp) as log_date,
+                      sum(case when result='GRANTED' then 1 else 0 end) as granted,
+                      sum(case when result='DENIED' then 1 else 0 end) as denied,
+                      count(*) as total
+               FROM access_logs
+               WHERE timestamp >= datetime('now', '-7 days')
+               GROUP BY log_date
+               ORDER BY log_date ASC"""
+        ).fetchall()
+
+        return {
+            "total_users": total_users,
+            "total_admins": total_admins,
+            "recognitions_today": recognitions_today,
+            "granted_today": granted_today,
+            "denied_today": denied_today,
+            "unknown_today": unknown_today,
+            "spoof_attempts_today": spoofs_today,
+            "recent_activity": [dict(r) for r in recent_activity],
+        }

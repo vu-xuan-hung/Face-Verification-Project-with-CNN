@@ -7,21 +7,27 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from vshield.api import database, user_store
+from vshield.core.anti_spoof import build_pad_service
 from vshield.core.authorization_gallery import (
     EMBEDDING_CONTRACT,
     inside,
     load_authorization_gallery,
 )
-from vshield.services.enrollment_images import prepare_images, reject_duplicate_face
+from vshield.services.enrollment_images import (
+    liveness_provenance,
+    prepare_images,
+    reject_duplicate_face,
+)
 
 
 class UserManagementService:
-    def __init__(self, root, preprocessor, embedder, db_path=None, identity_index=None):
+    def __init__(self, root, preprocessor, embedder, db_path=None, identity_index=None, pad_service=None):
         self.root = Path(root).resolve()
         self.preprocessor = preprocessor
         self.embedder = embedder
         self.db_path = db_path
         self.identity_index = identity_index
+        self.pad_service = build_pad_service() if pad_service is None else pad_service
 
     def create(self, actor_id, profile, images, role):
         with closing(database.connect(self.db_path)) as conn:
@@ -32,7 +38,7 @@ class UserManagementService:
         destination = inside(inside(self.root, "faces"), username)
         if destination.exists() or database.get_account(username, self.db_path):
             raise ValueError("Username is already registered")
-        templates, contents = prepare_images(images, self.preprocessor, self.embedder)
+        templates, contents = prepare_images(images, self.preprocessor, self.embedder, self.pad_service)
         enrollment_id = uuid.uuid4().hex
         draft = inside(self.root, f"drafts/{enrollment_id}")
         draft.mkdir(parents=True, exist_ok=False)
@@ -65,6 +71,7 @@ class UserManagementService:
                     "consent": True,
                     "consented_at": datetime.now(timezone.utc).isoformat(),
                     "templates": templates,
+                    **liveness_provenance(templates),
                 }
                 (draft / "enrollment.json").write_text(json.dumps(manifest), encoding="utf-8")
                 destination.parent.mkdir(parents=True, exist_ok=True)

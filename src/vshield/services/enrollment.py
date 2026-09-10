@@ -12,6 +12,7 @@ from PIL import Image
 
 from vshield.api import database
 from vshield.api.roles import normalize_role
+from vshield.core.anti_spoof import build_pad_service
 from vshield.core.authorization_gallery import (
     EMBEDDING_CONTRACT,
     file_digest,
@@ -20,7 +21,11 @@ from vshield.core.authorization_gallery import (
 )
 from vshield.core.embedder import FaceEmbedder, normalize_embedding
 from vshield.core.face_preprocessor import FacePreprocessor
-from vshield.services.enrollment_images import reject_duplicate_face
+from vshield.services.enrollment_images import (
+    liveness_provenance,
+    reject_duplicate_face,
+    verify_samples,
+)
 
 
 def enroll(
@@ -33,6 +38,7 @@ def enroll(
     db_path=None,
     preprocessor=None,
     embedder=None,
+    pad_service=None,
 ):
     """Create a new enrollment. A failed draft is inert and retained for inspection."""
     database.validate_username(username)
@@ -53,9 +59,12 @@ def enroll(
         raise ValueError("Enrollment already exists; refusing to overwrite biometric data")
     preprocessor = preprocessor or FacePreprocessor()
     embedder = embedder or FaceEmbedder()
+    pad_service = build_pad_service() if pad_service is None else pad_service
     templates = []
     encoded_images = []
     seen = set()
+    decoded = []
+    source_hashes = []
     for image_path in images:
         path = Path(image_path).resolve(strict=True)
         if path.stat().st_size > 8 * 1024 * 1024:
@@ -67,7 +76,10 @@ def enroll(
         image = cv2.imdecode(np.frombuffer(content, np.uint8), cv2.IMREAD_COLOR)
         if image is None:
             raise ValueError("Cannot decode enrollment photo")
-        crops = preprocessor.extract(image)
+        decoded.append(image)
+        source_hashes.append(file_digest(path))
+    verified = verify_samples(decoded, preprocessor, pad_service)
+    for (image, crops, pad), source_hash in zip(verified, source_hashes, strict=True):
         vector = normalize_embedding(embedder.encode(crops.facenet))
         if templates and np.linalg.norm(vector - np.asarray(templates[0]["embedding"])) > 0.9:
             raise ValueError("Enrollment photos do not consistently match the same identity")
@@ -84,8 +96,9 @@ def enroll(
             {
                 "image": f"{len(templates) + 1:02d}.png",
                 "sha256": digest,
-                "source_sha256": file_digest(path),
+                "source_sha256": source_hash,
                 "embedding": vector.tolist(),
+                "pad": pad.to_dict(),
             }
         )
 
@@ -104,6 +117,7 @@ def enroll(
         "consent": True,
         "consented_at": datetime.now(timezone.utc).isoformat(),
         "templates": templates,
+        **liveness_provenance(templates),
     }
     (draft / "enrollment.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     faces_root.mkdir(parents=True, exist_ok=True)

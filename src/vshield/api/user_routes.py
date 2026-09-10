@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from vshield.api import sessions, user_store
 from vshield.api.user_schemas import CreateUserInput, RoleInput, StatusInput, UpdateUserInput
+from vshield.core.anti_spoof import PadRejectedError, PadStatus
 from vshield.core.embedder import EmbeddingError
 from vshield.core.face_preprocessor import FacePreprocessingError
 from vshield.core.identity_index_support import IdentityIndexError
@@ -16,6 +17,10 @@ router = APIRouter()
 def execute(operation):
     try:
         return operation()
+    except PadRejectedError as exc:
+        code = 503 if exc.result.status is PadStatus.ERROR else 403
+        raise HTTPException(code, detail={"code": exc.result.reason, "pad": exc.result.to_dict(),
+                                        "message": "Enrollment denied by liveness gate"}) from exc
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except LookupError as exc:

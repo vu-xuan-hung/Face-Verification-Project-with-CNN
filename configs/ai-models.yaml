@@ -1,0 +1,21 @@
+anti_spoof:
+  model_name: MiniFASNetV2
+  model_version: minifasnet-v2-b6d5f04-a5eb02e1-opset17
+  runtime: onnxruntime_cpu
+  model_path: artifacts/models/minifasnet-v2.onnx
+  checksum: 04e8890346498741e655adfcb67b48ee2620fc2d251321a8f0ad3262bb842067
+  verified_contract: true
+  input_size: [80, 80]
+  input_layout: NCHW
+  input_color_space: BGR
+  input_dtype: float32
+  normalization: none
+  output_classes: [spoof_0, real, spoof_2]
+  output_type: logits
+  real_class_index: 1
+  crop_scale: 2.7
+  # Provisional policy, not calibrated or optimal.
+  threshold: 0.8
+  source_commit: b6d5f04ad78778917853b25c778acef6d5626d15
+  source_checkpoint_sha256: a5eb02e1843f19b5386b953cc4c9f011c3f985d0ee2bb9819eea9a142099bec0
+  parity_report: artifacts/models/minifasnet-v2-parity.json

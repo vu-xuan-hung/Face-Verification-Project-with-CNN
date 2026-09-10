@@ -4,22 +4,38 @@ Synthetic pixels and embeddings exercise storage safety, not recognition accurac
 """
 
 import json
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from PIL import Image
 
 from vshield.api import database
+from vshield.core.anti_spoof import PadResult, PadStatus
 from vshield.core.authorization_gallery import load_authorization_gallery
+from vshield.core.face_preprocessor import FaceCrops
 from vshield.core.identity_index_support import IdentityIndexError
 from vshield.services.enrollment import enroll
+
+
+class AlwaysRealPad:
+    """Test double: PAD always passes so enrollment tests focus on storage logic."""
+    ready = True
+
+    def predict(self, *, image, bbox):
+        return PadResult(
+            status=PadStatus.REAL,
+            score=0.99,
+            class_index=1,
+            model_version="test-double",
+            threshold=0.8,
+            reason="PAD_REAL",
+        )
 
 
 class DeterministicFace:
     def extract(self, frame):
         assert frame.shape == (32, 32, 3)
-        return SimpleNamespace(facenet=frame)
+        return FaceCrops(anti_spoof=frame, facenet=frame, bbox=(0, 0, 32, 32))
 
 
 class DeterministicEmbedding:
@@ -48,6 +64,7 @@ def enroll_test(gallery, username="alice", **kwargs):
         "db_path": db,
         "preprocessor": DeterministicFace(),
         "embedder": DeterministicEmbedding(),
+        "pad_service": AlwaysRealPad(),
     }
     options.update(kwargs)
     return enroll(root, username, options.pop("images", photos), **options)

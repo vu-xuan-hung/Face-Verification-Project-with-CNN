@@ -6,8 +6,8 @@ import cv2
 import numpy as np
 import pytest
 
+from tests.test_rbac_api import AlwaysRealPad, photos, profile
 from tests.test_rbac_api import managed as managed_fixture
-from tests.test_rbac_api import photos, profile
 from vshield.api import database
 from vshield.core.identity_index import IdentityIndexUnavailableError
 from vshield.core.managed_identity_index import ManagedIdentityIndex
@@ -123,6 +123,7 @@ def test_cli_rejects_mixed_identity_without_publication(managed, tmp_path):
             db_path=managed.db_path,
             preprocessor=managed.preprocessor,
             embedder=managed.embedder,
+            pad_service=AlwaysRealPad(),
         )
     assert database.list_accounts() == before
     assert not managed.root.exists()
@@ -142,6 +143,7 @@ def test_cli_duplicate_against_managed_gallery_creates_no_account(managed, tmp_p
             db_path=managed.db_path,
             preprocessor=managed.preprocessor,
             embedder=managed.embedder,
+            pad_service=AlwaysRealPad(),
         )
     assert database.list_accounts() == before
     assert database.get_account("duplicate") is None

@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "model_sha256": "04e8890346498741e655adfcb67b48ee2620fc2d251321a8f0ad3262bb842067",
+  "source_checkpoint_sha256": "a5eb02e1843f19b5386b953cc4c9f011c3f985d0ee2bb9819eea9a142099bec0",
+  "source_commit": "b6d5f04ad78778917853b25c778acef6d5626d15",
+  "source_architecture_sha256": "e498c4ec5e1ddfaba62b941a126c19d65aa564999f3309661fe43ee8bf38acd7",
+  "cases": 4,
+  "input_cases": [
+    "zeros",
+    "255",
+    "ramp",
+    "seeded_noise"
+  ],
+  "max_absolute_error": 2.7418136596679688e-06,
+  "max_probability_error": 9.5367431640625e-07,
+  "atol": 0.0001,
+  "rtol": 0.0001,
+  "runtime_versions": {
+    "torch": "2.14.0+cpu",
+    "onnxruntime": "1.29.0"
+  },
+  "scope": "numerical export parity only; not camera accuracy or threshold calibration"
+}

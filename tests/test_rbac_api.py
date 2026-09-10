@@ -1,7 +1,6 @@
 """Real HTTP/SQLite/enrollment tests; synthetic ML boundaries are not accuracy evidence."""
 
 import base64
-from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -10,13 +9,30 @@ from fastapi.testclient import TestClient
 
 from vshield.api import database, sessions
 from vshield.api.app import create_app
+from vshield.core.anti_spoof import PadResult, PadStatus
+from vshield.core.face_preprocessor import FaceCrops
 from vshield.services.authentication import AuthenticationResult, AuthenticationStatus
 from vshield.services.user_management import UserManagementService
 
 
+class AlwaysRealPad:
+    """Test double: PAD always passes so enrollment tests focus on storage/RBAC logic."""
+    ready = True
+
+    def predict(self, *, image, bbox):
+        return PadResult(
+            status=PadStatus.REAL,
+            score=0.99,
+            class_index=1,
+            model_version="test-double",
+            threshold=0.8,
+            reason="PAD_REAL",
+        )
+
+
 class SyntheticFaces:
     def extract(self, frame):
-        return SimpleNamespace(facenet=frame, anti_spoof=frame)
+        return FaceCrops(facenet=frame, anti_spoof=frame, bbox=(0, 0, 32, 32))
 
     def encode(self, frame):
         vector = np.zeros(512, dtype=np.float32)
@@ -53,7 +69,8 @@ def managed(tmp_path, monkeypatch):
     for name, role in [("member", "USER"), ("manager", "ADMIN"), ("owner", "SUPER_ADMIN")]:
         database.register_user(name, role)
     model = SyntheticFaces()
-    service = UserManagementService(tmp_path / "authorization", model, model, path)
+    service = UserManagementService(tmp_path / "authorization", model, model, path,
+                                    pad_service=AlwaysRealPad())
     return service
 
 
