@@ -6,7 +6,7 @@ VShield là hệ thống kiểm soát truy cập bằng khuôn mặt dành cho �
 
 ## Tính năng chính
 
-- Đăng nhập bằng webcam hoặc ảnh tải lên.
+- Đăng nhập bằng frame capture trực tiếp từ webcam; không có upload ảnh tĩnh trên giao diện login.
 - Face detection và kiểm tra chính xác một khuôn mặt.
 - Passive anti-spoofing bằng MiniFASNetV2 pretrained, chạy với ONNX Runtime CPU.
 - Face recognition bằng `keras-facenet`, embedding 512 chiều và L2 normalization.
@@ -23,7 +23,7 @@ VShield là hệ thống kiểm soát truy cập bằng khuôn mặt dành cho �
 ## Kiến trúc
 
 ```text
-Browser camera / image upload
+Browser camera capture
               │
               ▼
         FastAPI /predict
@@ -426,7 +426,7 @@ Kiểm tra từng component trong response:
 - Cho phép camera trong browser.
 - Dùng `localhost` hoặc HTTPS; browser thường chặn camera trên HTTP remote host.
 - Đóng ứng dụng khác đang giữ webcam.
-- Có thể dùng upload image cho demo, nhưng liveness vẫn do server quyết định.
+- Đăng nhập chỉ cho phép capture trực tiếp từ camera; giao diện không hỗ trợ upload ảnh tĩnh.
 
 ### Enrollment bị từ chối
 
@@ -462,7 +462,11 @@ Kiểm tra từng component trong response:
 
 ## License
 
-Metadata trong `pyproject.toml` khai báo giấy phép MIT. Repository hiện chưa kèm file `LICENSE` độc lập. Pretrained model và external datasets có điều khoản riêng từ tác giả tương ứng; giấy phép repository không tự động cấp quyền phân phối lại các artifact đó.
+Source code authored for VShield is released under the MIT License. See [LICENSE](LICENSE) for details.
+
+Third-party libraries, pretrained models, checkpoints, datasets, and other external artifacts remain subject to their respective licenses and terms of use. The VShield MIT License does not grant redistribution rights for those assets.
+
+This license statement does not assert that MiniFASNet, FaceNet, CelebA-Spoof, OULU-NPU, user biometric data, or any other third-party artifact is licensed under MIT. Verify the applicable upstream terms before use or redistribution.
 
 ---
 
