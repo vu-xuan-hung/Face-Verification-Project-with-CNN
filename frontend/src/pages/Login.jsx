@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Database, ImageUp, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { Camera, Database, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { apiRequest } from '../auth-api';
 import { useAuth } from '../auth-context';
@@ -15,6 +15,7 @@ export default function Login() {
   const [preview, setPreview] = useState(null);
   const [localError, setLocalError] = useState('');
   const [cameraState, setCameraState] = useState('STARTING');
+  const [cameraAttempt, setCameraAttempt] = useState(0);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const aliveRef = useRef(false);
@@ -30,6 +31,8 @@ export default function Login() {
     if (restoring || user) return undefined;
     let disposed = false;
     let stream;
+    setCameraState('STARTING');
+    setLocalError('');
     (async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera API is unavailable.');
@@ -38,10 +41,10 @@ export default function Login() {
         stream = media;
         if (videoRef.current) videoRef.current.srcObject = media;
         setCameraState('READY');
-      } catch { if (!disposed) { setCameraState('UNAVAILABLE'); setLocalError('Camera unavailable. You can upload an image instead.'); } }
+      } catch { if (!disposed) { setCameraState('UNAVAILABLE'); setLocalError('Camera access is required for secure sign in. Check browser permission and try again.'); } }
     })();
     return () => { disposed = true; stream?.getTracks().forEach(track => track.stop()); };
-  }, [restoring, user]);
+  }, [cameraAttempt, restoring, user]);
 
   const sendToBackend = async image => {
     const controller = new AbortController();
@@ -73,7 +76,7 @@ export default function Login() {
   };
   const failImage = message => {
     busyRef.current = false;
-    if (aliveRef.current) { setLoading(false); setLocalError(message || 'Cannot read this image. Choose a valid image up to 10 MB.'); }
+    if (aliveRef.current) { setLoading(false); setLocalError(message || 'Cannot capture the camera frame. Please try again.'); }
   };
   const captureSource = (source, width, height) => {
     const canvas = canvasRef.current;
@@ -85,27 +88,9 @@ export default function Login() {
   };
   const capture = () => {
     const video = videoRef.current;
-    if (!video?.videoWidth || !video.videoHeight) { setLocalError('Camera is not ready. Wait a moment or upload an image.'); return; }
+    if (!video?.videoWidth || !video.videoHeight) { setLocalError('Camera is not ready. Wait a moment and try again.'); return; }
     if (!beginAttempt()) return;
     try { captureSource(video, video.videoWidth, video.videoHeight); } catch { failImage(); }
-  };
-  const upload = event => {
-    const file = event.target.files?.[0]; event.target.value = '';
-    if (!file || !beginAttempt()) return;
-    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) { failImage('Use an image file no larger than 10 MB.'); return; }
-    const reader = new FileReader();
-    reader.onerror = () => failImage();
-    reader.onload = () => {
-      if (!aliveRef.current) return;
-      const image = new Image();
-      image.onerror = () => failImage();
-      image.onload = () => {
-        if (!aliveRef.current) return;
-        try { captureSource(image, image.width, image.height); } catch { failImage(); }
-      };
-      image.src = reader.result;
-    };
-    reader.readAsDataURL(file);
   };
 
   if (restoring) return <div className="route-loader" role="status"><ShieldCheck size={30} /><span>Verifying secure session…</span></div>;
@@ -119,7 +104,7 @@ export default function Login() {
     </section>
     <section className="login-workspace">
       <div className="login-card">
-        <header><div><p className="eyebrow">Secure sign in</p><h2>Verify your identity</h2><p>Position one face inside the guide and keep the image clear.</p></div><StatusBadge value={cameraState === 'READY' ? 'ACTIVE' : cameraState === 'STARTING' ? undefined : 'DISABLED'}>{cameraState === 'READY' ? 'Camera ready' : cameraState === 'STARTING' ? 'Starting camera' : 'Upload mode'}</StatusBadge></header>
+        <header><div><p className="eyebrow">Secure sign in</p><h2>Verify your identity</h2><p>Position one live face inside the guide and keep the camera image clear.</p></div><StatusBadge value={cameraState === 'READY' ? 'ACTIVE' : cameraState === 'STARTING' ? undefined : 'DISABLED'}>{cameraState === 'READY' ? 'Camera ready' : cameraState === 'STARTING' ? 'Starting camera' : 'Camera unavailable'}</StatusBadge></header>
         <ErrorBanner message={authError || localError} />
         <div className="camera-stage">
           <video ref={videoRef} autoPlay playsInline muted />
@@ -127,7 +112,10 @@ export default function Login() {
           <div className="face-guide"><span /><span /><span /><span /></div>
           <div className="camera-stage__label"><Camera size={15} />Live camera</div>
         </div>
-        <div className="login-actions"><button className="button button--primary button--large" onClick={capture} disabled={loading || cameraState !== 'READY'}><Camera size={19} />Capture &amp; Login</button><label className={`button button--secondary button--large file-button ${loading ? 'is-disabled' : ''}`}><ImageUp size={19} />Upload image<input className="file-input" type="file" accept="image/*" disabled={loading} onChange={upload} /></label></div>
+        <div className="login-actions">
+          <button className="button button--primary button--large" onClick={capture} disabled={loading || cameraState !== 'READY'}><Camera size={19} />Capture &amp; Login</button>
+          {cameraState === 'UNAVAILABLE' && <button className="button button--secondary button--large" onClick={() => setCameraAttempt(value => value + 1)} disabled={loading}><Camera size={19} />Retry camera</button>}
+        </div>
         <LoginStatus loading={loading} feedback={feedback} />
         {preview && <details className="capture-preview"><summary>View submitted frame</summary><img src={preview} alt="Submitted authentication frame" /></details>}
         <p className="privacy-note"><LockKeyhole size={15} />Not enrolled? Ask an administrator. Face data requires explicit biometric consent.</p>

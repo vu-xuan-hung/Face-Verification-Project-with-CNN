@@ -9,7 +9,7 @@
 
 ## System Goal
 
-V-Shield accepts a webcam capture or uploaded image, rejects invalid or spoof presentations, embeds a valid face with FaceNet, searches enrolled identities, obtains the matched user's role, and records a successful login. It is a small-scale capstone system, not a production biometric identity platform.
+V-Shield's login UI captures a webcam frame, rejects invalid or spoof presentations, embeds a valid face with FaceNet, searches enrolled identities, obtains the matched user's role, and records a successful login. The HTTP API still receives a client-supplied base64 frame, so passive PAD remains the security boundary against static-image replay. It is a small-scale capstone system, not a production biometric identity platform.
 
 ## Runtime Architecture
 
@@ -55,7 +55,7 @@ The anti-spoof stage is fail-closed: FaceNet and identity search run only after 
 
 ## Authentication Flow
 
-1. React captures a webcam frame or reads an uploaded image.
+1. React captures a webcam frame; the login page does not expose static-image upload.
 2. The client sends a base64 data URI to `POST /predict`.
 3. FastAPI validates encoded size, decoded pixel count, and image format.
 4. The preprocessor requires exactly one face and produces model-specific crops.

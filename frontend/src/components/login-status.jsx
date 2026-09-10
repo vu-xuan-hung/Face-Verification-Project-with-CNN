@@ -21,7 +21,7 @@ export function loginFeedback(code, success, message, name) {
 }
 
 export default function LoginStatus({ loading, feedback }) {
-  if (!loading && !feedback) return <div className="login-status login-status--idle"><ScanFace size={22} /><div><strong>Ready for verification</strong><p>Capture a live image or upload an existing image for demonstration.</p></div></div>;
+  if (!loading && !feedback) return <div className="login-status login-status--idle"><ScanFace size={22} /><div><strong>Ready for verification</strong><p>This sign-in page only accepts a live camera capture. Server-side liveness verification is still required.</p></div></div>;
   const Icon = loading ? LoaderCircle : feedback.Icon;
   return <div className={`login-status login-status--${loading ? 'info' : feedback.tone}`} role={loading ? 'status' : 'alert'}>
     <Icon className={loading ? 'spin' : ''} size={22} />
