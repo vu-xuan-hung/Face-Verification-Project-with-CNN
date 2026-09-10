@@ -6,24 +6,29 @@ import base64
 import binascii
 import csv
 import io
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import cv2
 import numpy as np
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 
-from vshield.api import database
+from vshield.api import database, sessions
+from vshield.api.request_limits import EnrollmentBodyLimit
 from vshield.api.schemas import ImagePayload
+from vshield.api.user_routes import router as user_router
 from vshield.services.authentication import (
     AuthenticationResult,
     AuthenticationService,
     AuthenticationStatus,
     build_default_authentication_service,
 )
+from vshield.services.user_management import UserManagementService
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MAX_ENCODED_IMAGE_BYTES = 8 * 1024 * 1024
@@ -75,6 +80,7 @@ def create_app(
     authentication_service: AuthenticationService | None = None,
     *,
     initialize_database: bool = True,
+    user_management_service=None,
 ) -> FastAPI:
     """Create an app with injectable dependencies and startup lifecycle."""
 
@@ -83,30 +89,58 @@ def create_app(
         if initialize_database:
             database.init_db()
         application.state.authentication_service = (
-            authentication_service
-            or build_default_authentication_service(PROJECT_ROOT)
+            authentication_service or build_default_authentication_service(PROJECT_ROOT)
         )
+        auth_service = application.state.authentication_service
+        application.state.user_management_service = user_management_service
+        if user_management_service is None and hasattr(auth_service, "face_embedder"):
+            application.state.user_management_service = UserManagementService(
+                PROJECT_ROOT / "data" / "authorization",
+                auth_service.face_preprocessor,
+                auth_service.face_embedder,
+                identity_index=getattr(auth_service, "identity_index", None),
+            )
         yield
 
     application = FastAPI(lifespan=lifespan)
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_error(request, exc):
+        errors = [
+            {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": errors})
+
+    @application.middleware("http")
+    async def prevent_private_response_caching(request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=os.getenv(
+            "VSHIELD_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+        ).split(","),
         allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["Content-Type", "Authorization"],
     )
+    application.add_middleware(EnrollmentBodyLimit)
+    application.include_router(user_router)
 
     @application.post("/predict")
-    def predict(data: ImagePayload):
+    def predict(data: ImagePayload, response: Response):
+        response.headers["Cache-Control"] = "no-store"
         try:
             image = decode_image(data.image)
         except ValueError as exc:
             return _failure(400, str(exc))
 
         try:
-            result: AuthenticationResult = (
-                application.state.authentication_service.authenticate(image)
+            result: AuthenticationResult = application.state.authentication_service.authenticate(
+                image
             )
         except Exception:
             return _failure(503, "Authentication service unavailable")
@@ -119,26 +153,38 @@ def create_app(
             return _failure(403, result.message)
         if result.status is AuthenticationStatus.UNAVAILABLE:
             return _failure(503, result.message)
-        if result.status is not AuthenticationStatus.AUTHENTICATED or not result.username:
+        if result.status is not AuthenticationStatus.AUTHENTICATED or not (
+            result.username or result.user_id
+        ):
             return _failure(503, "Authentication service returned an invalid result")
 
         try:
-            role = database.get_role(result.username)
-            database.log_login(result.username, role)
+            session = sessions.create_session(result.username, user_id=result.user_id)
+        except PermissionError as exc:
+            return _failure(403, str(exc))
         except Exception:
             return _failure(503, "Login database unavailable")
 
         return {
             "success": True,
-            "username": result.username,
-            "role": role,
+            **session,
         }
 
-    @application.get("/logs")
+    @application.get("/auth/me")
+    def me(response: Response, user=Depends(sessions.current_user)):
+        response.headers["Cache-Control"] = "no-store"
+        return user
+
+    @application.post("/auth/logout", status_code=204)
+    def logout(user=Depends(sessions.current_user), credentials=Depends(sessions.bearer)):
+        sessions.revoke_session(credentials.credentials)
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+    @application.get("/logs", dependencies=[Depends(sessions.require_admin)])
     def get_logs(username: str | None = None, date: str | None = None):
         return database.get_logs(username_filter=username, date_filter=date)
 
-    @application.get("/logs/export")
+    @application.get("/logs/export", dependencies=[Depends(sessions.require_admin)])
     def export_logs(username: str | None = None, date: str | None = None):
         logs = database.get_logs(username_filter=username, date_filter=date)
 

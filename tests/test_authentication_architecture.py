@@ -287,11 +287,13 @@ def test_default_service_prefers_local_chroma_when_pad_is_available(
     )
     monkeypatch.setattr(authentication, "FacePreprocessor", Mock(return_value=Mock()))
     monkeypatch.setattr(authentication, "FaceEmbedder", Mock(return_value=Mock()))
-    monkeypatch.setattr(authentication, "build_preferred_identity_index", index_builder)
+    monkeypatch.setattr(authentication, "ManagedIdentityIndex", index_builder)
 
     service = authentication.build_default_authentication_service(tmp_path)
 
-    persist_path, enrollment_loader = index_builder.call_args.args
-    assert persist_path == tmp_path.resolve() / "data" / "chroma"
-    assert callable(enrollment_loader)
+    private_path, db_path = index_builder.call_args.args
+    assert private_path == tmp_path.resolve() / "data" / "authorization"
+    assert db_path == tmp_path.resolve() / "login_logs.db"
+    identity_index.refresh.assert_called_once_with()
+    assert service.identity_is_user_id is True
     assert service.identity_index is identity_index

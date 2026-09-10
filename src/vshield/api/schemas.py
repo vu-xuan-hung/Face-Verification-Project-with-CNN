@@ -36,9 +36,13 @@ class PredictResponse(BaseModel):
     """Result of a single /predict call."""
 
     success: bool
+    user_id: int | None = None
     username: str | None = None
     role: str | None = None
     message: str | None = None
+    access_token: str | None = None
+    token_type: str | None = None
+    expires_in: int | None = None
 
 
 class LoginLog(BaseModel):

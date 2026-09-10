@@ -14,18 +14,17 @@ from vshield.core.anti_spoof import (
     load_anti_spoofing_model,
     predict_is_real,
 )
-from vshield.core.chroma_identity_index import build_preferred_identity_index
 from vshield.core.embedder import EmbeddingError, FaceEmbedder
 from vshield.core.face_preprocessor import (
     FacePreprocessingError,
     FacePreprocessor,
     InvalidFaceCountError,
 )
+from vshield.core.managed_identity_index import ManagedIdentityIndex
 from vshield.core.verifier import (
     IdentityIndex,
     IdentityIndexError,
     IdentityIndexUnavailableError,
-    load_database,
 )
 
 
@@ -43,6 +42,7 @@ class AuthenticationResult:
     message: str
     username: str | None = None
     distance: float | None = None
+    user_id: int | None = None
 
 
 class AuthenticationService:
@@ -55,11 +55,13 @@ class AuthenticationService:
         anti_spoof_model,
         face_embedder: FaceEmbedder,
         identity_index: IdentityIndex,
+        identity_is_user_id: bool = False,
     ):
         self.face_preprocessor = face_preprocessor
         self.anti_spoof_model = anti_spoof_model
         self.face_embedder = face_embedder
         self.identity_index = identity_index
+        self.identity_is_user_id = identity_is_user_id
         self._anti_spoof_lock = Lock()
 
     def authenticate(self, image: np.ndarray) -> AuthenticationResult:
@@ -126,7 +128,8 @@ class AuthenticationService:
         return AuthenticationResult(
             status=AuthenticationStatus.AUTHENTICATED,
             message="Authentication successful",
-            username=match.username,
+            username=None if self.identity_is_user_id else match.username,
+            user_id=int(match.username) if self.identity_is_user_id else None,
             distance=match.distance,
         )
 
@@ -139,24 +142,13 @@ def build_default_authentication_service(project_root: str | Path) -> Authentica
     anti_spoof_model = load_anti_spoofing_model(
         root / "artifacts" / "models" / "face_verify_v1.keras"
     )
-    if anti_spoof_model is None:
-        return AuthenticationService(
-            face_preprocessor=face_preprocessor,
-            anti_spoof_model=None,
-            face_embedder=face_embedder,
-            identity_index=IdentityIndex({}),
-        )
-
-    def encode_enrollment(path: str | Path) -> np.ndarray:
-        return face_embedder.encode_file(path, face_preprocessor=face_preprocessor)
-
-    identity_index = build_preferred_identity_index(
-        root / "data" / "chroma",
-        lambda: load_database(root / "data" / "faces", encode_file=encode_enrollment),
-    )
+    identity_index = ManagedIdentityIndex(root / "data" / "authorization", root / "login_logs.db")
+    if anti_spoof_model is not None:
+        identity_index.refresh()
     return AuthenticationService(
         face_preprocessor=face_preprocessor,
         anti_spoof_model=anti_spoof_model,
         face_embedder=face_embedder,
         identity_index=identity_index,
+        identity_is_user_id=True,
     )

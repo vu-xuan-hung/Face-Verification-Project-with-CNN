@@ -1,151 +1,166 @@
 import { useState, useRef, useEffect } from 'react';
 import { Camera, Upload } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
+import { apiRequest } from '../auth-api';
+import { useAuth } from '../auth-context';
+import { isManager } from '../role-permissions';
 
 export default function Login() {
+  const { user, loading: restoring, error, login } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null); 
+  const [result, setResult] = useState(null);
   const [preview, setPreview] = useState(null);
-  
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const navigate = useNavigate();
+  const aliveRef = useRef(false);
+  const busyRef = useRef(false);
+  const requestRef = useRef(null);
 
   useEffect(() => {
-    let stream = null;
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      requestRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (restoring || user) return undefined;
+    let disposed = false;
+    let stream;
     const startWebcam = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480, facingMode: "user" }
+        const media = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480, facingMode: 'user' }
         });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        if (disposed) {
+          media.getTracks().forEach(track => track.stop());
+          return;
         }
-      } catch (err) {
-        setResult({ type: 'error', msg: 'Cannot access camera. Please upload an image.' });
+        stream = media;
+        if (videoRef.current) videoRef.current.srcObject = media;
+      } catch {
+        if (!disposed) setResult({ type: 'error', msg: 'Cannot access camera. Please upload an image.' });
       }
     };
     startWebcam();
     return () => {
-      if (stream) stream.getTracks().forEach(track => track.stop());
+      disposed = true;
+      stream?.getTracks().forEach(track => track.stop());
     };
-  }, []);
-
-  const captureAndResize = () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const base64Image = canvas.toDataURL('image/jpeg', 0.9);
-    setPreview(base64Image);
-    return base64Image;
-  };
+  }, [restoring, user]);
 
   const sendToBackend = async (base64Image) => {
-    setLoading(true);
-    setResult(null);
+    const controller = new AbortController();
+    requestRef.current = controller;
     try {
-      const response = await fetch('http://localhost:8000/predict', {
+      const response = await apiRequest('/predict', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Image })
+        body: JSON.stringify({ image: base64Image }),
+        signal: controller.signal
       });
       const data = await response.json();
-      setLoading(false);
-      
+      if (!aliveRef.current || controller.signal.aborted) return;
       if (data.success) {
-        setResult({ type: 'success', msg: `Thành công! Quyền: ${data.role}` });
-        localStorage.setItem('username', data.username);
-        localStorage.setItem('role', data.role);
-        localStorage.setItem('last_login', new Date().toLocaleString());
-        
-        setTimeout(() => {
-          navigate(data.role === 'admin' ? '/admin' : '/user');
-        }, 1200);
+        await login(data.access_token, controller.signal);
       } else {
-        setResult({ type: 'error', msg: `Thất bại: ${data.message}` });
+        setResult({ type: 'error', msg: data.message || 'Authentication failed. Contact your administrator to enroll.' });
       }
     } catch (err) {
-      setLoading(false);
-      setResult({ type: 'error', msg: 'Lỗi kết nối tới Server (FastAPI backend).' });
+      if (aliveRef.current && err.name !== 'AbortError') {
+        setResult({ type: 'error', msg: err.message || 'Cannot connect to authentication server.' });
+      }
+    } finally {
+      busyRef.current = false;
+      if (aliveRef.current) setLoading(false);
     }
   };
 
-  const handleCapture = () => {
-    if (!videoRef.current || !videoRef.current.srcObject) return;
-    const base64 = captureAndResize();
-    sendToBackend(base64);
+  const beginAttempt = () => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setLoading(true);
+    setResult(null);
+    return true;
   };
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const failImage = () => {
+    busyRef.current = false;
+    if (aliveRef.current) {
+      setLoading(false);
+      setResult({ type: 'error', msg: 'Cannot read this image. Please choose a valid image (maximum 10 MB).' });
+    }
+  };
+  const capture = (source, width, height) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const scale = Math.min(1, 1024 / Math.max(width, height));
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+    const encoded = canvas.toDataURL('image/jpeg', 0.9);
+    setPreview(encoded);
+    sendToBackend(encoded);
+  };
+  const handleCapture = () => {
+    const video = videoRef.current;
+    if (!video?.videoWidth || !video.videoHeight) {
+      setResult({ type: 'error', msg: 'Camera is not ready. Please wait or upload an image.' });
+      return;
+    }
+    if (!beginAttempt()) return;
+    try { capture(video, video.videoWidth, video.videoHeight); } catch { failImage(); }
+  };
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (!file || !beginAttempt()) return;
+    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
+      failImage();
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onerror = failImage;
+    reader.onload = () => {
+      if (!aliveRef.current) return;
       const img = new Image();
+      img.onerror = failImage;
       img.onload = () => {
-        const canvas = canvasRef.current;
-        const scale = Math.min(1, 1024 / Math.max(img.width, img.height));
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        const base64Image = canvas.toDataURL('image/jpeg', 0.9);
-        setPreview(base64Image);
-        sendToBackend(base64Image);
+        if (!aliveRef.current) return;
+        try { capture(img, img.width, img.height); } catch { failImage(); }
       };
-      img.src = event.target.result;
+      img.src = reader.result;
     };
     reader.readAsDataURL(file);
   };
+
+  if (restoring) return <div className="card-container" role="status">Verifying session...</div>;
+  if (user) return <Navigate to={isManager(user) ? '/admin' : '/user'} replace />;
 
   return (
     <div className="card-container login-container">
       <h1>Face Login System</h1>
       <p className="subtitle">Position your face clearly in the camera</p>
-      
+      <p className="subtitle">Chưa đăng ký khuôn mặt? Liên hệ quản trị viên để đăng ký với sự đồng ý của bạn.</p>
+      {error && <div className="result-box error" role="alert">{error}</div>}
       <div className="video-wrapper">
-        <video ref={videoRef} className="webcam" autoPlay playsInline muted></video>
-        <canvas ref={canvasRef} width="480" height="480" className="hidden"></canvas>
-        <div className="scanning-frame"></div>
+        <video ref={videoRef} className="webcam" autoPlay playsInline muted />
+        <canvas ref={canvasRef} className="hidden" />
+        <div className="scanning-frame" />
       </div>
-
       <div className="controls">
         <button className="primary-btn" onClick={handleCapture} disabled={loading}>
-          <Camera size={20} /> Capture & Login
+          <Camera size={20} /> Capture &amp; Login
         </button>
-        
         <div className="divider"><span>OR</span></div>
-        
-        <label htmlFor="imageUpload" className="secondary-btn">
+        <label htmlFor="imageUpload" className="secondary-btn" aria-disabled={loading}>
           <Upload size={18} /> Upload Image
         </label>
-        <input type="file" id="imageUpload" accept="image/*" className="hidden" onChange={handleFileUpload} />
+        <input type="file" id="imageUpload" accept="image/*" className="hidden" disabled={loading} onChange={handleFileUpload} />
       </div>
-      
-      {loading && (
-        <div className="spinner-container">
-          <div className="spinner"></div>
-          <p>Verifying face...</p>
-        </div>
-      )}
-
-      {result && (
-        <div className={`result-box ${result.type}`}>
-          {result.msg}
-        </div>
-      )}
-      
-      {preview && (
-        <div className="preview-container">
-          <p>Detected-face input preview:</p>
-          <img src={preview} alt="Preview" className="preview-img" />
-        </div>
-      )}
+      {loading && <div className="spinner-container" role="status"><div className="spinner" /><p>Verifying face...</p></div>}
+      {result && <div className={`result-box ${result.type}`} role="alert">{result.msg}</div>}
+      {preview && <div className="preview-container"><p>Detected-face input preview:</p><img src={preview} alt="Preview" className="preview-img" /></div>}
     </div>
   );
 }

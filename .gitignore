@@ -73,6 +73,10 @@ data/Real/
 data/SplitData/
 data/faces/
 data/chroma/
+data/authorization/
+data/external/
+*.db-wal
+*.db-shm
 # Keep data/ directory itself (via .gitkeep)
 
 # -----------------------------------------------------------------------------
@@ -102,6 +106,7 @@ artifacts/models/*.pth
 *.log
 logs/
 tmp/
+.tmp-rbac-*/
 temp/
 
 # -----------------------------------------------------------------------------

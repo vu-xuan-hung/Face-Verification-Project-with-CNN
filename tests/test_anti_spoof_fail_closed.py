@@ -165,25 +165,24 @@ def test_fake_returns_403_and_skips_recognition():
     assert_recognition_skipped(embedder, identity_index)
 
 
-def test_real_calls_identity_search(monkeypatch):
+def test_real_calls_identity_search(monkeypatch, tmp_path):
     model = Mock()
     model.predict.return_value = np.array([[0.9]], dtype=np.float32)
     service, embedder, identity_index = make_service(model)
-    monkeypatch.setattr(database, "get_role", Mock(return_value="user"))
-    log_login = Mock()
-    monkeypatch.setattr(database, "log_login", log_login)
+    monkeypatch.setattr(database, "get_db_path", lambda: str(tmp_path / "auth.db"))
+    database.init_db()
+    database.register_user("alice", "user")
 
     response = post_predict(service)
 
     assert response.status_code == 200
-    assert response.json() == {
-        "success": True,
-        "username": "alice",
-        "role": "user",
-    }
+    assert response.json()["success"] is True
+    assert response.json()["username"] == "alice"
+    assert response.json()["role"] == "USER"
+    assert response.json()["access_token"]
     embedder.encode.assert_called_once()
     identity_index.search.assert_called_once()
-    log_login.assert_called_once_with("alice", "user")
+    assert database.get_logs()[0]["username"] == "alice"
 
 
 def test_unknown_face_returns_403(monkeypatch):
