@@ -33,6 +33,7 @@ dependencies = [
     "tensorflow>=2.16,<3.0",
     "keras>=3.0",
     "keras-facenet>=0.3",
+    "onnxruntime>=1.20,<2.0",  # pretrained PAD CPU inference
     "faiss-cpu>=1.14,<2.0",
     "chromadb>=1.5.9,<2.0",
     # Computer vision
@@ -53,6 +54,8 @@ dependencies = [
     "pyyaml>=6.0",
     "tqdm>=4.66",
     "rich>=13.0",
+    "requests>=2.32,<3.0",     # bounded official dataset acquisition
+    "urllib3>=2.0,<3.0",      # streamed response error handling
 ]
 
 # ---------------------------------------------------------------------------

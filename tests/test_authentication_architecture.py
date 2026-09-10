@@ -253,24 +253,25 @@ def test_load_database_requires_username_directories(tmp_path):
     encoder.assert_called_once_with(user_image)
 
 
-def test_default_service_skips_enrollment_when_anti_spoof_model_is_missing(
+def test_default_service_skips_gallery_when_pad_unavailable(
     tmp_path,
     monkeypatch,
 ):
-    user_dir = tmp_path / "data" / "faces" / "alice"
-    user_dir.mkdir(parents=True)
-    (user_dir / "face.jpg").write_bytes(b"not-read")
-    embedder = Mock()
+    """When PAD is unavailable (UnavailablePad), no index refresh is attempted."""
+    from vshield.core.anti_spoof import UnavailablePad
 
-    monkeypatch.setattr(authentication, "load_anti_spoofing_model", Mock(return_value=None))
+    monkeypatch.setattr(authentication, "build_pad_service",
+                        Mock(return_value=UnavailablePad()))
     monkeypatch.setattr(authentication, "FacePreprocessor", Mock(return_value=Mock()))
-    monkeypatch.setattr(authentication, "FaceEmbedder", Mock(return_value=embedder))
+    monkeypatch.setattr(authentication, "FaceEmbedder", Mock(return_value=Mock()))
+    mock_index = Mock()
+    monkeypatch.setattr(authentication, "ManagedIdentityIndex", Mock(return_value=mock_index))
 
     service = authentication.build_default_authentication_service(tmp_path)
 
-    assert service.anti_spoof_model is None
-    assert not service.identity_index.available
-    embedder.encode_file.assert_not_called()
+    # PAD is not ready, so the index refresh must NOT have been called.
+    assert getattr(service.anti_spoof_model, "ready", False) is False
+    mock_index.refresh.assert_not_called()
 
 
 def test_default_service_prefers_local_chroma_when_pad_is_available(
@@ -279,19 +280,24 @@ def test_default_service_prefers_local_chroma_when_pad_is_available(
 ):
     identity_index = Mock()
     index_builder = Mock(return_value=identity_index)
+    from vshield.core.anti_spoof import PadResult, PadStatus
 
-    monkeypatch.setattr(
-        authentication,
-        "load_anti_spoofing_model",
-        Mock(return_value=Mock()),
+    real_pad = Mock()
+    real_pad.ready = True
+    real_pad.predict.return_value = PadResult(
+        status=PadStatus.REAL, score=0.95, class_index=1,
+        model_version="test", threshold=0.8, reason="PAD_REAL"
     )
+    monkeypatch.setattr(authentication, "build_pad_service", Mock(return_value=real_pad))
     monkeypatch.setattr(authentication, "FacePreprocessor", Mock(return_value=Mock()))
     monkeypatch.setattr(authentication, "FaceEmbedder", Mock(return_value=Mock()))
-    monkeypatch.setattr(authentication, "build_preferred_identity_index", index_builder)
+    monkeypatch.setattr(authentication, "ManagedIdentityIndex", index_builder)
 
     service = authentication.build_default_authentication_service(tmp_path)
 
-    persist_path, enrollment_loader = index_builder.call_args.args
-    assert persist_path == tmp_path.resolve() / "data" / "chroma"
-    assert callable(enrollment_loader)
+    private_path, db_path = index_builder.call_args.args
+    assert private_path == tmp_path.resolve() / "data" / "authorization"
+    assert db_path == tmp_path.resolve() / "login_logs.db"
+    identity_index.refresh.assert_called_once_with()
+    assert service.identity_is_user_id is True
     assert service.identity_index is identity_index

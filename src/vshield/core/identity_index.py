@@ -41,6 +41,18 @@ class RankedIdentity:
     distance: float
 
 
+@dataclass(frozen=True)
+class RecognitionDecision:
+    decision: str
+    match: MatchResult | None = None
+    distance: float | None = None
+    runner_up_distance: float | None = None
+
+    def to_dict(self):
+        return {"decision": self.decision, "recognition_distance": self.distance,
+                "runner_up_distance": self.runner_up_distance, "metric": "normalized_l2"}
+
+
 class IdentityIndex:
     """Immutable identity snapshot backed by FAISS with exact NumPy fallback."""
 
@@ -118,8 +130,14 @@ class IdentityIndex:
         return [RankedIdentity(username, distance) for username, distance in ranked[:k]]
 
     def search(self, embedding: np.ndarray) -> MatchResult | None:
-        if not self.available:
+        decision = self.search_decision(embedding)
+        if decision.decision == "GALLERY_UNAVAILABLE":
             raise IdentityIndexUnavailableError("No enrolled face embeddings are available")
+        return decision.match
+
+    def search_decision(self, embedding: np.ndarray) -> RecognitionDecision:
+        if not self.available:
+            return RecognitionDecision("GALLERY_UNAVAILABLE")
 
         try:
             query = normalize_embedding(embedding)
@@ -131,7 +149,7 @@ class IdentityIndex:
             self.search_k,
         )
         candidates = self._search_candidates(query, candidate_count)
-        return self._decide(candidates)
+        return self._decide_details(candidates)
 
     def _search_candidates(
         self,
@@ -171,20 +189,23 @@ class IdentityIndex:
         ]
 
     def _decide(self, candidates: list[tuple[str, float]]) -> MatchResult | None:
+        return self._decide_details(candidates).match
+
+    def _decide_details(self, candidates: list[tuple[str, float]]) -> RecognitionDecision:
         per_identity = self._minimum_identity_distances(candidates)
         ranked = sorted(per_identity.items(), key=lambda item: item[1])
         if not ranked:
             raise IdentityIndexError("Vector search returned no candidates")
 
         username, best_distance = ranked[0]
-        if best_distance > self.distance_threshold:
-            return None
-
         runner_up = ranked[1][1] if len(ranked) > 1 else None
+        if best_distance > self.distance_threshold:
+            return RecognitionDecision("UNKNOWN", distance=best_distance, runner_up_distance=runner_up)
         if runner_up is not None and runner_up - best_distance < self.min_margin:
-            return None
+            return RecognitionDecision("AMBIGUOUS", distance=best_distance, runner_up_distance=runner_up)
 
-        return MatchResult(username, best_distance, runner_up)
+        return RecognitionDecision("MATCH", MatchResult(username, best_distance, runner_up),
+                                   best_distance, runner_up)
 
     @staticmethod
     def _minimum_identity_distances(

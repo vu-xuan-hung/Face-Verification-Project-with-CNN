@@ -31,6 +31,8 @@ class ChromaIdentityIndex(IdentityIndex):
         min_margin: float = 0.05,
         search_k: int = 5,
         client=None,
+        identity_key: str = "username",
+        collection_version: int | None = None,
     ) -> None:
         super().__init__(
             {},
@@ -40,11 +42,21 @@ class ChromaIdentityIndex(IdentityIndex):
             prefer_faiss=False,
         )
         self.persist_path = Path(persist_path).resolve()
+        if identity_key not in {"username", "user_id"}:
+            raise ValueError("Invalid identity metadata key")
+        self.identity_key = identity_key
+        collection_name = (
+            COLLECTION_NAME if identity_key == "username" else "vshield_facenet_user_id_v2"
+        )
+        if collection_version is not None:
+            if type(collection_version) is not int or collection_version < 0:
+                raise ValueError("Invalid gallery revision")
+            collection_name += f"_r{collection_version}"
         self._store_lock = Lock()
         try:
             self._client = client or self._persistent_client(self.persist_path)
             self._collection = self._client.get_or_create_collection(
-                name=COLLECTION_NAME,
+                name=collection_name,
                 embedding_function=None,
                 configuration={"hnsw": {"space": "l2"}},
             )
@@ -91,7 +103,7 @@ class ChromaIdentityIndex(IdentityIndex):
                 self._collection.upsert(
                     ids=ids,
                     embeddings=matrix.tolist(),
-                    metadatas=[{"username": name} for name in names],
+                    metadatas=[{self.identity_key: name} for name in names],
                 )
         except Exception as exc:
             raise IdentityIndexError("Cannot persist enrollment embeddings in Chroma") from exc
@@ -108,6 +120,34 @@ class ChromaIdentityIndex(IdentityIndex):
         digest.update(index.to_bytes(8, "big"))
         digest.update(vector.tobytes())
         return digest.hexdigest()
+
+    def reconcile(self, database_faces: dict[str, list[np.ndarray]]) -> int:
+        """Startup/offline only: replace membership and refresh the exact fallback."""
+        matrix, names = flatten_database_embeddings(database_faces)
+        ids = [
+            self._record_id(name, index, vector)
+            for index, (name, vector) in enumerate(zip(names, matrix, strict=True))
+        ]
+        try:
+            with self._store_lock:
+                existing = set(self._collection.get(include=[])["ids"])
+                batch_size = min(1000, self._client.get_max_batch_size())
+                for start in range(0, len(ids), batch_size):
+                    stop = start + batch_size
+                    self._collection.upsert(
+                        ids=ids[start:stop],
+                        embeddings=matrix[start:stop].tolist(),
+                        metadatas=[{self.identity_key: name} for name in names[start:stop]],
+                    )
+                stale = sorted(existing - set(ids))
+                for start in range(0, len(stale), batch_size):
+                    self._collection.delete(ids=stale[start : start + batch_size])
+                if int(self._collection.count()) != len(ids):
+                    raise IdentityIndexError("Concurrent Chroma mutation; stop other writers")
+                self._matrix, self._names, self._count = matrix, names, len(names)
+        except Exception as exc:
+            raise IdentityIndexError("Cannot reconcile authorization vectors") from exc
+        return self._count
 
     def _search_candidates(
         self,
@@ -143,7 +183,7 @@ class ChromaIdentityIndex(IdentityIndex):
         distance_batch = (result.get("distances") or [[]])[0]
         candidates: list[tuple[str, float]] = []
         for metadata, squared_distance in zip(metadata_batch, distance_batch, strict=True):
-            username = metadata.get("username") if isinstance(metadata, dict) else None
+            username = metadata.get(self.identity_key) if isinstance(metadata, dict) else None
             distance = float(squared_distance)
             if not username or not np.isfinite(distance) or distance < 0:
                 continue
@@ -156,12 +196,29 @@ class ChromaIdentityIndex(IdentityIndex):
 def build_preferred_identity_index(
     persist_path: str | Path,
     enrollment_loader: Callable[[], dict[str, list[np.ndarray]]],
+    *,
+    reconcile: bool = False,
+    identity_key: str = "username",
+    collection_version: int | None = None,
 ) -> IdentityIndex:
     """Prefer persisted Chroma and fall back to the existing in-memory index."""
-    database_faces: dict[str, list[np.ndarray]] | None = None
+    # Validate the authoritative gallery BEFORE opening persisted data; invalid
+    # active enrollment must never fall back to stale persistent templates.
+    database_faces = enrollment_loader() if reconcile else None
     try:
-        index = ChromaIdentityIndex(persist_path)
-        if not index.available:
+        if collection_version is not None:
+            index = ChromaIdentityIndex(
+                persist_path, identity_key=identity_key, collection_version=collection_version
+            )
+        else:
+            index = (
+                ChromaIdentityIndex(persist_path)
+                if identity_key == "username"
+                else ChromaIdentityIndex(persist_path, identity_key=identity_key)
+            )
+        if reconcile:
+            index.reconcile(database_faces)
+        elif not index.available:
             database_faces = enrollment_loader()
             index.seed(database_faces)
         return index

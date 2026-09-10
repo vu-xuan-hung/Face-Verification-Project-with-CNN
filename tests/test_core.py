@@ -4,10 +4,10 @@ Tests cơ bản cho V-Shield.
 Chạy: make test  hoặc  uv run pytest tests/ -v
 """
 
-import numpy as np
-import pytest
-import sys
 import os
+import sys
+
+import numpy as np
 
 # Thêm src/ vào path để import được vshield
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 # -------------------------------------------------------------------
 # Test verifier.py — who_is_it()
 # -------------------------------------------------------------------
+
 
 def make_fake_embedding(seed=0):
     """Tạo embedding giả ngẫu nhiên để test (không cần model thật)."""
@@ -71,9 +72,10 @@ def test_who_is_it_empty_database():
 # Test database.py — get_role()
 # -------------------------------------------------------------------
 
+
 def test_get_role_returns_correct_role(tmp_path):
     """Sau khi register_user, get_role() phải trả đúng role."""
-    from vshield.api.database import init_db, register_user, get_role
+    from vshield.api.database import get_role, init_db, register_user
 
     db_file = str(tmp_path / "test.db")
     init_db(db_path=db_file)
@@ -81,24 +83,24 @@ def test_get_role_returns_correct_role(tmp_path):
     register_user("hung", role="admin", db_path=db_file)
     register_user("alice", role="user", db_path=db_file)
 
-    assert get_role("hung", db_path=db_file) == "admin"
-    assert get_role("alice", db_path=db_file) == "user"
+    assert get_role("hung", db_path=db_file) == "ADMIN"
+    assert get_role("alice", db_path=db_file) == "USER"
 
 
-def test_get_role_default_user_for_unknown(tmp_path):
-    """User không có trong bảng → mặc định trả 'user'."""
-    from vshield.api.database import init_db, get_role
+def test_get_role_denies_unknown(tmp_path):
+    """Unknown accounts must never receive implicit access."""
+    from vshield.api.database import get_role, init_db
 
     db_file = str(tmp_path / "test.db")
     init_db(db_path=db_file)
 
     result = get_role("nguoi_la", db_path=db_file)
-    assert result == "user"
+    assert result is None
 
 
 def test_log_and_get_logs(tmp_path):
     """log_login() ghi vào DB, get_logs() đọc được."""
-    from vshield.api.database import init_db, log_login, get_logs
+    from vshield.api.database import get_logs, init_db, log_login
 
     db_file = str(tmp_path / "test.db")
     init_db(db_path=db_file)

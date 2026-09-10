@@ -1,32 +1,19 @@
-"""Authentication orchestration from face detection through identity search."""
-
-from __future__ import annotations
+"""PAD-gated identification; SQLite authorization remains in the API layer."""
 
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from threading import Lock
 
 import numpy as np
 
-from vshield.core.anti_spoof import (
-    AntiSpoofingError,
-    load_anti_spoofing_model,
-    predict_is_real,
-)
-from vshield.core.chroma_identity_index import build_preferred_identity_index
-from vshield.core.embedder import EmbeddingError, FaceEmbedder
+from vshield.core.anti_spoof import PadResult, PadStatus, build_pad_service, check_pad
+from vshield.core.embedder import FaceEmbedder
 from vshield.core.face_preprocessor import (
     FacePreprocessingError,
     FacePreprocessor,
     InvalidFaceCountError,
 )
-from vshield.core.verifier import (
-    IdentityIndex,
-    IdentityIndexError,
-    IdentityIndexUnavailableError,
-    load_database,
-)
+from vshield.core.managed_identity_index import ManagedIdentityIndex
 
 
 class AuthenticationStatus(str, Enum):
@@ -34,6 +21,7 @@ class AuthenticationStatus(str, Enum):
     INVALID_FACE = "invalid_face"
     SPOOF = "spoof"
     UNKNOWN = "unknown"
+    AMBIGUOUS = "ambiguous"
     UNAVAILABLE = "unavailable"
 
 
@@ -43,120 +31,86 @@ class AuthenticationResult:
     message: str
     username: str | None = None
     distance: float | None = None
+    user_id: int | None = None
+    code: str | None = None
+    pad: PadResult | None = None
+    recognition: dict | None = None
+
+    def metadata(self):
+        return {"code": self.code or self.status.value.upper(),
+                "pad": self.pad.to_dict() if self.pad else None,
+                "recognition": self.recognition,
+                "user_id": self.user_id}
 
 
 class AuthenticationService:
-    """Enforce anti-spoof before FaceNet and identity search."""
-
-    def __init__(
-        self,
-        *,
-        face_preprocessor: FacePreprocessor,
-        anti_spoof_model,
-        face_embedder: FaceEmbedder,
-        identity_index: IdentityIndex,
-    ):
+    def __init__(self, *, face_preprocessor, anti_spoof_model, face_embedder,
+                 identity_index, identity_is_user_id=False):
         self.face_preprocessor = face_preprocessor
         self.anti_spoof_model = anti_spoof_model
         self.face_embedder = face_embedder
         self.identity_index = identity_index
-        self._anti_spoof_lock = Lock()
+        self.identity_is_user_id = identity_is_user_id
 
     def authenticate(self, image: np.ndarray) -> AuthenticationResult:
-        if self.anti_spoof_model is None:
-            return AuthenticationResult(
-                status=AuthenticationStatus.UNAVAILABLE,
-                message="Anti-spoofing service unavailable",
-            )
-
+        # Detection must establish exactly one face before PAD receives a bbox.
         try:
             crops = self.face_preprocessor.extract(image)
         except InvalidFaceCountError as exc:
-            return AuthenticationResult(
-                status=AuthenticationStatus.INVALID_FACE,
-                message=str(exc),
-            )
-        except FacePreprocessingError as exc:
-            return AuthenticationResult(
-                status=AuthenticationStatus.INVALID_FACE,
-                message=str(exc),
-            )
+            code = "NO_FACE" if exc.count == 0 else "MULTIPLE_FACES"
+            return AuthenticationResult(AuthenticationStatus.INVALID_FACE, str(exc), code=code)
+        except FacePreprocessingError:
+            return AuthenticationResult(AuthenticationStatus.INVALID_FACE, "Invalid face image",
+                                        code="INVALID_IMAGE")
         except Exception:
-            return AuthenticationResult(
-                status=AuthenticationStatus.UNAVAILABLE,
-                message="Face preprocessing service unavailable",
-            )
+            return AuthenticationResult(AuthenticationStatus.UNAVAILABLE, "Face detection unavailable",
+                                        code="MODEL_ERROR")
 
-        face_batch = np.expand_dims(crops.anti_spoof, axis=0).astype(np.float32) / 255.0
-        try:
-            with self._anti_spoof_lock:
-                is_real = predict_is_real(self.anti_spoof_model, face_batch)
-        except AntiSpoofingError:
-            return AuthenticationResult(
-                status=AuthenticationStatus.UNAVAILABLE,
-                message="Anti-spoofing service unavailable",
-            )
-
-        if not is_real:
-            return AuthenticationResult(
-                status=AuthenticationStatus.SPOOF,
-                message="Spoofing detected",
-            )
-
+        pad = check_pad(self.anti_spoof_model, image, crops.bbox)
+        if pad.status is PadStatus.ERROR:
+            return AuthenticationResult(AuthenticationStatus.UNAVAILABLE,
+                                        "Anti-spoofing service unavailable",
+                                        code=pad.reason, pad=pad)
+        if not pad.is_real:
+            return AuthenticationResult(AuthenticationStatus.SPOOF,
+                                        "Spoofing detected" if pad.status is PadStatus.FAKE else "Liveness uncertain",
+                                        code="SPOOF" if pad.status is PadStatus.FAKE else "PAD_UNCERTAIN", pad=pad)
         try:
             embedding = self.face_embedder.encode(crops.facenet)
-            match = self.identity_index.search(embedding)
-        except (EmbeddingError, IdentityIndexUnavailableError, IdentityIndexError):
-            return AuthenticationResult(
-                status=AuthenticationStatus.UNAVAILABLE,
-                message="Face recognition service unavailable",
-            )
+            decision = self.identity_index.search_decision(embedding)
+            details = decision.to_dict()
         except Exception:
+            return AuthenticationResult(AuthenticationStatus.UNAVAILABLE,
+                                        "Face recognition service unavailable", code="MODEL_ERROR", pad=pad)
+        if decision.decision == "GALLERY_UNAVAILABLE":
+            return AuthenticationResult(AuthenticationStatus.UNAVAILABLE, "Identity gallery unavailable",
+                                        code="GALLERY_UNAVAILABLE", pad=pad, recognition=details)
+        if decision.decision != "MATCH":
+            ambiguous = decision.decision == "AMBIGUOUS"
             return AuthenticationResult(
-                status=AuthenticationStatus.UNAVAILABLE,
-                message="Face recognition service unavailable",
-            )
-
-        if match is None:
-            return AuthenticationResult(
-                status=AuthenticationStatus.UNKNOWN,
-                message="Unknown face, not registered",
-            )
-
+                AuthenticationStatus.AMBIGUOUS if ambiguous else AuthenticationStatus.UNKNOWN,
+                "Ambiguous face match" if ambiguous else "Unknown face, not registered",
+                distance=decision.distance, code=decision.decision, pad=pad, recognition=details)
+        match = decision.match
         return AuthenticationResult(
-            status=AuthenticationStatus.AUTHENTICATED,
-            message="Authentication successful",
-            username=match.username,
-            distance=match.distance,
-        )
+            AuthenticationStatus.AUTHENTICATED, "Authentication successful",
+            username=None if self.identity_is_user_id else match.username,
+            user_id=int(match.username) if self.identity_is_user_id else None,
+            distance=match.distance, code="SUCCESS", pad=pad, recognition=details)
 
 
 def build_default_authentication_service(project_root: str | Path) -> AuthenticationService:
-    """Build one immutable authentication snapshot for application startup."""
     root = Path(project_root).resolve()
-    face_preprocessor = FacePreprocessor()
-    face_embedder = FaceEmbedder()
-    anti_spoof_model = load_anti_spoofing_model(
-        root / "artifacts" / "models" / "face_verify_v1.keras"
-    )
-    if anti_spoof_model is None:
-        return AuthenticationService(
-            face_preprocessor=face_preprocessor,
-            anti_spoof_model=None,
-            face_embedder=face_embedder,
-            identity_index=IdentityIndex({}),
-        )
-
-    def encode_enrollment(path: str | Path) -> np.ndarray:
-        return face_embedder.encode_file(path, face_preprocessor=face_preprocessor)
-
-    identity_index = build_preferred_identity_index(
-        root / "data" / "chroma",
-        lambda: load_database(root / "data" / "faces", encode_file=encode_enrollment),
-    )
-    return AuthenticationService(
-        face_preprocessor=face_preprocessor,
-        anti_spoof_model=anti_spoof_model,
-        face_embedder=face_embedder,
-        identity_index=identity_index,
-    )
+    preprocessor = FacePreprocessor()
+    embedder = FaceEmbedder()
+    pad = build_pad_service(root / "configs/ai-models.yaml")
+    index = ManagedIdentityIndex(root / "data/authorization", root / "login_logs.db")
+    if pad.ready:
+        try:
+            index.refresh()
+        except Exception:
+            # Preserve server/readiness diagnostics; login refresh still fails closed.
+            pass
+    return AuthenticationService(face_preprocessor=preprocessor, anti_spoof_model=pad,
+                                 face_embedder=embedder, identity_index=index,
+                                 identity_is_user_id=True)

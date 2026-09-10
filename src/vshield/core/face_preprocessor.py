@@ -29,6 +29,8 @@ class FaceCrops:
 
     anti_spoof: np.ndarray
     facenet: np.ndarray
+    original_image: np.ndarray | None = None
+    bbox: tuple[int, int, int, int] | None = None
 
 
 class FacePreprocessor:
@@ -76,7 +78,8 @@ class FacePreprocessor:
 
         anti_spoof = cv2.resize(face_crop, ANTI_SPOOF_SIZE)
         facenet = self._align_by_eyes(face_crop)
-        return FaceCrops(anti_spoof=anti_spoof, facenet=facenet)
+        return FaceCrops(anti_spoof=anti_spoof, facenet=facenet,
+                         original_image=image, bbox=tuple(int(v) for v in faces[0]))
 
     @staticmethod
     def _expanded_crop(image: np.ndarray, box) -> np.ndarray:
