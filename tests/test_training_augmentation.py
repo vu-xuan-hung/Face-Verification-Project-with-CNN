@@ -1,7 +1,9 @@
 """Tests for seeded, train-only anti-spoof augmentation."""
 
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
@@ -133,12 +135,16 @@ def test_production_loader_restores_augmentation_in_fresh_process(tmp_path):
         "raise SystemExit(tuple(output.shape) != (1, 16, 16, 3))\n"
     )
 
+    env = os.environ.copy()
+    src_root = str(Path(__file__).resolve().parents[1] / "src")
+    env["PYTHONPATH"] = src_root + os.pathsep + env.get("PYTHONPATH", "")
     completed = subprocess.run(
         [sys.executable, "-X", "utf8", "-c", script],
         capture_output=True,
         text=True,
         timeout=90,
         check=False,
+        env=env,
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
