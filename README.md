@@ -462,7 +462,11 @@ Kiểm tra từng component trong response:
 
 ## License
 
-Metadata trong `pyproject.toml` khai báo giấy phép MIT. Repository hiện chưa kèm file `LICENSE` độc lập. Pretrained model và external datasets có điều khoản riêng từ tác giả tương ứng; giấy phép repository không tự động cấp quyền phân phối lại các artifact đó.
+Source code authored for VShield is released under the MIT License. See [LICENSE](LICENSE) for details.
+
+Third-party libraries, pretrained models, checkpoints, datasets, and other external artifacts remain subject to their respective licenses and terms of use. The VShield MIT License does not grant redistribution rights for those assets.
+
+This license statement does not assert that MiniFASNet, FaceNet, CelebA-Spoof, OULU-NPU, user biometric data, or any other third-party artifact is licensed under MIT. Verify the applicable upstream terms before use or redistribution.
 
 ---
 
