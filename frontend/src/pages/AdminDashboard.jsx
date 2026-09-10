@@ -1,128 +1,68 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { LogOut, Download, Search } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Activity, Ban, RefreshCw, ShieldAlert, ShieldCheck, UserCog, Users } from 'lucide-react';
 import { useAuth } from '../auth-context';
-import { logsPath } from '../auth-api';
+import AppShell from '../components/app-shell';
+import AccessLogsPanel from '../components/access-logs-panel';
+import ActivityChart from '../components/activity-chart';
+import { ErrorBanner, SectionCard, StatCard } from '../components/shared-ui';
 import UserManagement from '../user-management';
-import { Link } from 'react-router-dom';
+
+const statDefinitions = [
+  ['total_users', 'Total users', Users, 'primary'],
+  ['total_admins', 'Administrators', UserCog, 'premium'],
+  ['recognitions_today', 'Attempts today', Activity, 'info'],
+  ['granted_today', 'Granted today', ShieldCheck, 'success'],
+  ['denied_today', 'Denied today', Ban, 'danger'],
+  ['spoof_attempts_today', 'Spoof attempts', ShieldAlert, 'warning'],
+  ['unknown_today', 'Unknown faces', Users, 'neutral'],
+];
 
 export default function AdminDashboard() {
   const { user, request, logout } = useAuth();
-  const [logs, setLogs] = useState([]);
-  const [userFilter, setUserFilter] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const logsRequest = useRef(null);
-  const exportRequest = useRef(null);
 
-  const fetchLogs = useCallback(async (username = '', date = '') => {
-    logsRequest.current?.abort();
-    const controller = new AbortController();
-    logsRequest.current = controller;
-    setLoading(true);
-    setError('');
+  const fetchStats = useCallback(async signal => {
+    setLoading(true); setError('');
     try {
-      const response = await request(logsPath('/logs', username, date), { signal: controller.signal });
+      const response = await request('/dashboard/stats', { signal });
       const data = await response.json();
-      if (!Array.isArray(data)) throw new Error('Server returned invalid log data.');
-      if (!controller.signal.aborted) setLogs(data);
+      if (!signal?.aborted) setStats(data);
     } catch (err) {
-      if (!controller.signal.aborted) {
-        setLogs([]);
-        setError(err.message);
-      }
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
+      if (!signal?.aborted) { setStats(null); setError(`Dashboard metrics unavailable: ${err.message}`); }
+    } finally { if (!signal?.aborted) setLoading(false); }
   }, [request]);
 
   useEffect(() => {
-    fetchLogs();
-    return () => {
-      logsRequest.current?.abort();
-      exportRequest.current?.abort();
-    };
-  }, [fetchLogs]);
-
-  const handleExport = async () => {
-    if (exportRequest.current) return;
     const controller = new AbortController();
-    exportRequest.current = controller;
-    setExporting(true);
-    setError('');
-    try {
-      const response = await request(logsPath('/logs/export', userFilter, dateFilter), { signal: controller.signal });
-      const blob = await response.blob();
-      if (controller.signal.aborted) return;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'login-logs.csv';
-      document.body.appendChild(link);
-      try { link.click(); } finally {
-        link.remove();
-        URL.revokeObjectURL(url);
-      }
-    } catch (err) {
-      if (!controller.signal.aborted) setError(err.message);
-    } finally {
-      exportRequest.current = null;
-      if (!controller.signal.aborted) setExporting(false);
-    }
-  };
+    fetchStats(controller.signal);
+    return () => controller.abort();
+  }, [fetchStats]);
 
-  const handleLogout = async () => {
-    setLoggingOut(true);
-    await logout();
-  };
-
-  return (
-    <div className="card-container dashboard-container">
-      <div className="header">
-        <h1>Admin Dashboard</h1>
-        <div className="user-info">
-          <span>{user.role}: <strong>{user.username}</strong></span>
-          <button className="logout-btn" onClick={handleLogout} disabled={loggingOut}>
-            <LogOut size={16} /> {loggingOut ? 'Signing out...' : 'Logout'}
-          </button>
+  const handleLogout = async () => { setLoggingOut(true); await logout(); };
+  return <AppShell user={user} mode="admin" title="Security dashboard"
+    subtitle="Monitor biometric access, accounts and presentation attacks from one place."
+    loggingOut={loggingOut} onLogout={handleLogout}>
+    <section id="overview" className="dashboard-overview">
+      <div className="page-actions">
+        <div><p className="eyebrow">Live operations overview</p><h2>Today at a glance</h2></div>
+        <div>
+          <a className="button button--primary button--small" href="#enrollment">Enroll identity</a>
+          <button className="button button--secondary button--small" disabled={loading} onClick={() => fetchStats()}><RefreshCw className={loading ? 'spin' : ''} size={16} />Refresh metrics</button>
         </div>
       </div>
-      <Link className="secondary-btn small-btn" to="/user">Personal dashboard</Link>
-      <UserManagement />
-      <h2>Login logs</h2>
-      <div className="controls-panel">
-        <div className="filters">
-          <input type="text" placeholder="Filter by Username..." aria-label="Filter by username" className="input-field"
-            value={userFilter} onChange={e => setUserFilter(e.target.value)} />
-          <input type="date" aria-label="Filter by date" className="input-field"
-            value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
-          <button className="primary-btn small-btn" onClick={() => fetchLogs(userFilter, dateFilter)} disabled={loading || loggingOut}>
-            <Search size={16} /> Search
-          </button>
-        </div>
-        <button className="secondary-btn small-btn" onClick={handleExport} disabled={exporting || loggingOut}>
-          <Download size={16} /> {exporting ? 'Exporting...' : 'Export CSV'}
-        </button>
+      <ErrorBanner message={error} />
+      <div className="stats-grid" aria-busy={loading}>
+        {statDefinitions.map(([key, label, icon, tone]) => <StatCard key={key} label={label}
+          value={loading ? '…' : stats?.[key]} hint={stats ? 'Current system data' : 'Not available'} icon={icon} tone={tone} />)}
       </div>
-      {error && <div className="result-box error" role="alert">{error}</div>}
-      <div className="table-container">
-        <table className="data-table">
-          <thead><tr><th>Username</th><th>Role</th><th>Time</th></tr></thead>
-          <tbody>
-            {loading ? <tr><td colSpan="3" role="status">Loading logs...</td></tr> : logs.length === 0 ? (
-              <tr><td colSpan="3" style={{ textAlign: 'center', padding: '20px' }}>No records found</td></tr>
-            ) : logs.map((log, idx) => (
-              <tr key={idx}>
-                <td>{log.username}</td>
-                <td><span className={`badge ${['ADMIN', 'SUPER_ADMIN'].includes(log.role) ? 'badge-admin' : 'badge-user'}`}>{log.role}</span></td>
-                <td>{log.timestamp}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+      <SectionCard title="Access activity" description="Granted and denied decisions recorded during the last seven days.">
+        <ActivityChart activity={stats?.recent_activity} />
+      </SectionCard>
+    </section>
+    <UserManagement />
+    <AccessLogsPanel request={request} />
+  </AppShell>;
 }

@@ -1,15 +1,20 @@
-import { useState, useRef, useEffect } from 'react';
-import { Camera, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Camera, Database, ImageUp, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { apiRequest } from '../auth-api';
 import { useAuth } from '../auth-context';
+import { Brand } from '../components/app-shell';
+import LoginStatus, { loginFeedback } from '../components/login-status';
+import { ErrorBanner, StatusBadge } from '../components/shared-ui';
 import { isManager } from '../role-permissions';
 
 export default function Login() {
-  const { user, loading: restoring, error, login } = useAuth();
+  const { user, loading: restoring, error: authError, login } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [feedback, setFeedback] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [localError, setLocalError] = useState('');
+  const [cameraState, setCameraState] = useState('STARTING');
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const aliveRef = useRef(false);
@@ -18,149 +23,115 @@ export default function Login() {
 
   useEffect(() => {
     aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-      requestRef.current?.abort();
-    };
+    return () => { aliveRef.current = false; requestRef.current?.abort(); };
   }, []);
 
   useEffect(() => {
     if (restoring || user) return undefined;
     let disposed = false;
     let stream;
-    const startWebcam = async () => {
+    (async () => {
       try {
-        const media = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480, facingMode: 'user' }
-        });
-        if (disposed) {
-          media.getTracks().forEach(track => track.stop());
-          return;
-        }
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera API is unavailable.');
+        const media = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+        if (disposed) { media.getTracks().forEach(track => track.stop()); return; }
         stream = media;
         if (videoRef.current) videoRef.current.srcObject = media;
-      } catch {
-        if (!disposed) setResult({ type: 'error', msg: 'Cannot access camera. Please upload an image.' });
-      }
-    };
-    startWebcam();
-    return () => {
-      disposed = true;
-      stream?.getTracks().forEach(track => track.stop());
-    };
+        setCameraState('READY');
+      } catch { if (!disposed) { setCameraState('UNAVAILABLE'); setLocalError('Camera unavailable. You can upload an image instead.'); } }
+    })();
+    return () => { disposed = true; stream?.getTracks().forEach(track => track.stop()); };
   }, [restoring, user]);
 
-  const sendToBackend = async (base64Image) => {
+  const sendToBackend = async image => {
     const controller = new AbortController();
     requestRef.current = controller;
+    setFeedback(null);
     try {
-      const response = await apiRequest('/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Image }),
-        signal: controller.signal
-      });
+      const response = await apiRequest('/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image }), signal: controller.signal });
       const data = await response.json();
       if (!aliveRef.current || controller.signal.aborted) return;
-      if (data.success) {
-        await login(data.access_token, controller.signal);
-      } else {
-        setResult({ type: 'error', msg: data.message || 'Authentication failed. Contact your administrator to enroll.' });
-      }
+      const status = loginFeedback(data.code, data.success, data.message, data.name || data.username);
+      setFeedback(status);
+      if (data.success) await login(data.access_token, controller.signal);
     } catch (err) {
       if (aliveRef.current && err.name !== 'AbortError') {
-        setResult({ type: 'error', msg: err.message || 'Cannot connect to authentication server.' });
+        const code = err.code || err.body?.code || (err.status === 503 ? 'MODEL_ERROR' : null);
+        setFeedback(loginFeedback(code, false, err.message));
       }
     } finally {
       busyRef.current = false;
+      requestRef.current = null;
       if (aliveRef.current) setLoading(false);
     }
   };
 
   const beginAttempt = () => {
     if (busyRef.current) return false;
-    busyRef.current = true;
-    setLoading(true);
-    setResult(null);
+    busyRef.current = true; setLoading(true); setLocalError(''); setFeedback(null);
     return true;
   };
-  const failImage = () => {
+  const failImage = message => {
     busyRef.current = false;
-    if (aliveRef.current) {
-      setLoading(false);
-      setResult({ type: 'error', msg: 'Cannot read this image. Please choose a valid image (maximum 10 MB).' });
-    }
+    if (aliveRef.current) { setLoading(false); setLocalError(message || 'Cannot read this image. Choose a valid image up to 10 MB.'); }
   };
-  const capture = (source, width, height) => {
+  const captureSource = (source, width, height) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
     const scale = Math.min(1, 1024 / Math.max(width, height));
-    canvas.width = Math.round(width * scale);
-    canvas.height = Math.round(height * scale);
+    canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale);
     canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
     const encoded = canvas.toDataURL('image/jpeg', 0.9);
-    setPreview(encoded);
-    sendToBackend(encoded);
+    setPreview(encoded); sendToBackend(encoded);
   };
-  const handleCapture = () => {
+  const capture = () => {
     const video = videoRef.current;
-    if (!video?.videoWidth || !video.videoHeight) {
-      setResult({ type: 'error', msg: 'Camera is not ready. Please wait or upload an image.' });
-      return;
-    }
+    if (!video?.videoWidth || !video.videoHeight) { setLocalError('Camera is not ready. Wait a moment or upload an image.'); return; }
     if (!beginAttempt()) return;
-    try { capture(video, video.videoWidth, video.videoHeight); } catch { failImage(); }
+    try { captureSource(video, video.videoWidth, video.videoHeight); } catch { failImage(); }
   };
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    event.target.value = '';
+  const upload = event => {
+    const file = event.target.files?.[0]; event.target.value = '';
     if (!file || !beginAttempt()) return;
-    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
-      failImage();
-      return;
-    }
+    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) { failImage('Use an image file no larger than 10 MB.'); return; }
     const reader = new FileReader();
-    reader.onerror = failImage;
+    reader.onerror = () => failImage();
     reader.onload = () => {
       if (!aliveRef.current) return;
-      const img = new Image();
-      img.onerror = failImage;
-      img.onload = () => {
+      const image = new Image();
+      image.onerror = () => failImage();
+      image.onload = () => {
         if (!aliveRef.current) return;
-        try { capture(img, img.width, img.height); } catch { failImage(); }
+        try { captureSource(image, image.width, image.height); } catch { failImage(); }
       };
-      img.src = reader.result;
+      image.src = reader.result;
     };
     reader.readAsDataURL(file);
   };
 
-  if (restoring) return <div className="card-container" role="status">Verifying session...</div>;
+  if (restoring) return <div className="route-loader" role="status"><ShieldCheck size={30} /><span>Verifying secure session…</span></div>;
   if (user) return <Navigate to={isManager(user) ? '/admin' : '/user'} replace />;
-
-  return (
-    <div className="card-container login-container">
-      <h1>Face Login System</h1>
-      <p className="subtitle">Position your face clearly in the camera</p>
-      <p className="subtitle">Chưa đăng ký khuôn mặt? Liên hệ quản trị viên để đăng ký với sự đồng ý của bạn.</p>
-      {error && <div className="result-box error" role="alert">{error}</div>}
-      <div className="video-wrapper">
-        <video ref={videoRef} className="webcam" autoPlay playsInline muted />
-        <canvas ref={canvasRef} className="hidden" />
-        <div className="scanning-frame" />
+  return <main className="login-page">
+    <section className="login-brand-panel">
+      <Brand />
+      <div><p className="eyebrow">Biometric security platform</p><h1>Intelligent access.<br />Verified identity.</h1><p>AI-powered face recognition access control with passive liveness protection and server-enforced roles.</p></div>
+      <ul className="trust-list"><li><ShieldCheck /><span><strong>Anti-spoofing first</strong><small>Recognition runs only after liveness passes.</small></span></li><li><LockKeyhole /><span><strong>Fail-closed security</strong><small>Unavailable models never bypass verification.</small></span></li><li><Database /><span><strong>Auditable access</strong><small>Security decisions are recorded for administrators.</small></span></li></ul>
+      <p className="login-brand-panel__foot">VShield · FaceNet identity · MiniFASNet liveness</p>
+    </section>
+    <section className="login-workspace">
+      <div className="login-card">
+        <header><div><p className="eyebrow">Secure sign in</p><h2>Verify your identity</h2><p>Position one face inside the guide and keep the image clear.</p></div><StatusBadge value={cameraState === 'READY' ? 'ACTIVE' : cameraState === 'STARTING' ? undefined : 'DISABLED'}>{cameraState === 'READY' ? 'Camera ready' : cameraState === 'STARTING' ? 'Starting camera' : 'Upload mode'}</StatusBadge></header>
+        <ErrorBanner message={authError || localError} />
+        <div className="camera-stage">
+          <video ref={videoRef} autoPlay playsInline muted />
+          <canvas ref={canvasRef} className="hidden" />
+          <div className="face-guide"><span /><span /><span /><span /></div>
+          <div className="camera-stage__label"><Camera size={15} />Live camera</div>
+        </div>
+        <div className="login-actions"><button className="button button--primary button--large" onClick={capture} disabled={loading || cameraState !== 'READY'}><Camera size={19} />Capture &amp; Login</button><label className={`button button--secondary button--large file-button ${loading ? 'is-disabled' : ''}`}><ImageUp size={19} />Upload image<input className="file-input" type="file" accept="image/*" disabled={loading} onChange={upload} /></label></div>
+        <LoginStatus loading={loading} feedback={feedback} />
+        {preview && <details className="capture-preview"><summary>View submitted frame</summary><img src={preview} alt="Submitted authentication frame" /></details>}
+        <p className="privacy-note"><LockKeyhole size={15} />Not enrolled? Ask an administrator. Face data requires explicit biometric consent.</p>
       </div>
-      <div className="controls">
-        <button className="primary-btn" onClick={handleCapture} disabled={loading}>
-          <Camera size={20} /> Capture &amp; Login
-        </button>
-        <div className="divider"><span>OR</span></div>
-        <label htmlFor="imageUpload" className="secondary-btn" aria-disabled={loading}>
-          <Upload size={18} /> Upload Image
-        </label>
-        <input type="file" id="imageUpload" accept="image/*" className="hidden" disabled={loading} onChange={handleFileUpload} />
-      </div>
-      {loading && <div className="spinner-container" role="status"><div className="spinner" /><p>Verifying face...</p></div>}
-      {result && <div className={`result-box ${result.type}`} role="alert">{result.msg}</div>}
-      {preview && <div className="preview-container"><p>Detected-face input preview:</p><img src={preview} alt="Preview" className="preview-img" /></div>}
-    </div>
-  );
+    </section>
+  </main>;
 }

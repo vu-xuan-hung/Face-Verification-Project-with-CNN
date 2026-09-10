@@ -108,7 +108,7 @@ export const useAuth = () => useContext(AuthContext);
 
 export function ProtectedRoute({ role, children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="card-container" role="status">Verifying session...</div>;
+  if (loading) return <div className="route-loader" role="status">Verifying secure session…</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (role && !(Array.isArray(role) ? role : [role]).includes(user.role)) return <Navigate to="/user" replace />;
   return children;

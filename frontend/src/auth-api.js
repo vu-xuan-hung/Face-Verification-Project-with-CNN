@@ -7,12 +7,15 @@ export async function apiRequest(path, { token, ...options } = {}) {
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (!response.ok) {
     let detail;
+    let body;
     try {
-      const body = await response.json();
-      detail = typeof body?.detail === 'string' ? body.detail : body?.message;
+      body = await response.json();
+      detail = typeof body?.detail === 'string' ? body.detail : (body?.message || (typeof body?.detail === 'object' ? body?.detail?.message : null));
     } catch { /* Non-JSON error response. */ }
     const error = new Error(typeof detail === 'string' ? detail : `Request failed (${response.status}).`);
     error.status = response.status;
+    error.body = body;
+    error.code = body?.code || (typeof body?.detail === 'object' ? body?.detail?.code : null);
     throw error;
   }
   return response;
@@ -33,4 +36,15 @@ export function logsPath(path, username, date) {
   if (username) query.set('username', username);
   if (date) query.set('date', date);
   return `${path}?${query}`;
+}
+
+export function accessLogsPath(path, params = {}) {
+  const query = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') {
+      query.set(k, v);
+    }
+  }
+  const qs = query.toString();
+  return qs ? `${path}?${qs}` : path;
 }

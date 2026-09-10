@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { API_URL, TOKEN_KEY, apiRequest, logsPath, validateIdentity } from '../src/auth-api.js';
+import { API_URL, TOKEN_KEY, accessLogsPath, apiRequest, logsPath, validateIdentity } from '../src/auth-api.js';
 
 test('API defaults and session key are namespaced', () => {
   assert.equal(API_URL, 'http://localhost:8000');
@@ -71,6 +71,10 @@ test('CSV and log query filters are safely encoded', () => {
   assert.equal(url.searchParams.get('username'), 'a&role=admin');
   assert.equal(url.searchParams.get('date'), '2026-09-09');
   assert.equal(url.searchParams.get('role'), null);
+  const accessUrl = new URL(accessLogsPath('/access-logs', { event_type: 'SPOOF_ATTEMPT', offset: 20, ignored: '' }), API_URL);
+  assert.equal(accessUrl.searchParams.get('event_type'), 'SPOOF_ATTEMPT');
+  assert.equal(accessUrl.searchParams.get('offset'), '20');
+  assert.equal(accessUrl.searchParams.has('ignored'), false);
 });
 
 test('successful logout supports empty 204 response', async () => {
