@@ -13,6 +13,8 @@
 
 </div>
 
+**Trạng thái 2026-09-10:** Đã có UI/API quản lý `SUPER_ADMIN`/`ADMIN`/`USER`, enrollment nhiều ảnh và phân quyền backend; FaceNet tìm `user_id`, SQLite quyết định role/status, không train lại khi thêm người. Chưa enroll người thật. Chưa tải được ảnh dataset mới (**0 mẫu mới/được phát hành**), chưa có PAD model nên đăng nhập thực tế trả `503`. Không tự gán 54 ảnh rời thành tài khoản. Xem [hướng dẫn phân quyền](docs/face-authorization.md) và [nhập/chia dataset ngoài](docs/external-datasets.md).
+
 ## Dataset v2 integrity workflow
 
 The historical split is marked `invalid_for_model_evaluation`. Do not use it
@@ -58,7 +60,7 @@ V-Shield là hệ thống xác thực người dùng sử dụng Deep Learning �
 
 1. **Phát hiện giả mạo** — phân biệt khuôn mặt thật (3D) với ảnh in / màn hình điện thoại (CNN Anti-Spoofing)
 2. **Nhận diện danh tính** — so khớp khuôn mặt với cơ sở dữ liệu (FaceNet One-Shot Learning)
-3. **Phân quyền tự động** — Admin hoặc User tùy theo danh tính
+3. **Phân quyền backend** — tra role SUPER_ADMIN/ADMIN/USER và trạng thái hiện tại từ SQLite, không suy quyền từ model
 
 Kiến trúc **Client — Server**: Frontend React gửi ảnh base64 lên Backend FastAPI để xử lý.
 
@@ -70,7 +72,7 @@ Kiến trúc **Client — Server**: Frontend React gửi ảnh base64 lên Backe
 |---|---|
 | 🛡️ **Anti-Spoofing** | CNN tự xây dựng phân loại Real/Fake, chặn replay attack bằng ảnh giấy |
 | ⚡ **One-Shot Learning** | FaceNet 512-D embeddings — thêm người mới không cần retrain model |
-| 🔐 **RBAC** | Tự phân quyền Admin/User ngay sau khi nhận diện thành công |
+| 🔐 **RBAC** | ADMIN quản lý USER; chỉ SUPER_ADMIN tạo/quản lý ADMIN và đổi role; backend kiểm tra độc lập UI |
 | 📋 **Audit Logging** | Lịch sử đăng nhập lưu SQLite, có API query & xuất CSV |
 | 📦 **Modern Tooling** | `uv` + `pyproject.toml` + `src-layout` — chuẩn Python 2026 |
 
@@ -97,7 +99,7 @@ Kiến trúc **Client — Server**: Frontend React gửi ảnh base64 lên Backe
                                    Known                           Unknown
                                       │                               │
                              Log to SQLite                        Reject
-                             Return role
+                             Check active account + issue session
 ```
 
 ---
@@ -126,7 +128,9 @@ project/
 ├── artifacts/
 │   └── models/                  # Chứa face_verify_v1.keras (gitignored)
 ├── data/
-│   ├── faces/                   # Ảnh khuôn mặt đăng ký của từng user
+│   ├── authorization/           # faces/<username>/ + Chroma phân quyền riêng
+│   ├── external/                # Dataset nghiên cứu nhập riêng, không cấp quyền
+│   ├── faces/                   # Ảnh legacy, không tự dùng để đăng nhập
 │   ├── SplitData/               # Dataset train/val/test
 │   └── DataCollect/             # Ảnh raw thu thập từ webcam
 ├── configs/
@@ -190,18 +194,16 @@ uv run python scripts/split_data.py --help
 
 ### Bước 3 — Đăng ký khuôn mặt người dùng
 
-Tạo thư mục con trong `data/faces/` với tên username, đặt ảnh vào trong:
+Dừng backend. Người quản trị chạy CLI với ảnh đã được chủ thể đồng ý đăng ký; thay đường dẫn ví dụ bằng ảnh đúng người:
 
-```
-data/faces/
-├── hung/        ← ảnh 1.jpg, 2.jpg, ... (tự động nhận role "admin")
-├── alice/       ← ảnh 1.jpg, 2.jpg, ...
-└── bob/         ← ảnh 1.jpg, 2.jpg, ...
+```powershell
+.\.venv\Scripts\python.exe scripts/manage-identities.py enroll --username owner --role ADMIN --images "C:\path\to\consented-owner-photo.jpg" --consent
+.\.venv\Scripts\python.exe scripts/manage-identities.py bootstrap-super-admin --username owner
+.\.venv\Scripts\python.exe scripts/manage-identities.py sync
+.\.venv\Scripts\python.exe scripts/manage-identities.py list
 ```
 
-Các ảnh đặt trực tiếp ở `data/faces/` không có username nên sẽ bị bỏ qua. Index danh tính
-được dựng thành snapshot khi backend khởi động; hãy khởi động lại backend sau khi thay đổi
-ảnh đăng ký.
+Khởi động lại backend. Bootstrap chỉ định SUPER_ADMIN đầu tiên một lần, không có username tự nhận quyền. Sau đăng nhập, dùng UI quản lý để enroll USER (ADMIN/SUPER_ADMIN) hoặc ADMIN (chỉ SUPER_ADMIN), capture/upload 2–10 ảnh có consent; thay đổi HTTP không cần restart hoặc train lại. Ảnh/manifest ở `data/authorization/faces/<username>/`; Chroma giữ embedding/user_id, SQLite quyết định quyền. Không dùng dataset công khai làm tài khoản đăng nhập. Xem [runbook](docs/face-authorization.md) về migration, API, test và retention; xóa tài khoản là soft delete, không xóa ảnh sinh trắc học.
 
 ### Bước 4 — Chạy ứng dụng
 
@@ -241,7 +243,7 @@ make help        # Xem toàn bộ lệnh
 |---|---|---|
 | **Cấu trúc thư mục** | File rải rác, không có package | `src-layout` chuẩn PEP 517 |
 | **Quản lý thư viện** | `pip` + `requirements.txt` | `uv` + `pyproject.toml` (nhanh hơn ~10x) |
-| **Đăng ký user** | Hardcode tên trong source code | Tự động đọc từ thư mục `data/faces/` |
+| **Đăng ký user** | Hardcode tên trong source code | UI/API enrollment có consent, CLI bootstrap owner, SQLite cấp quyền, Chroma lưu embedding/user_id |
 | **Cấu hình** | Magic path rải rắc khắp code | Tập trung trong `configs/data.yaml` |
 | **Database module** | Import trực tiếp `database.py` cùng thư mục | Module riêng trong package `vshield.api` |
 | **Chạy project** | Copy từng lệnh dài | `make dev`, `make train`,... |
@@ -251,20 +253,18 @@ make help        # Xem toàn bộ lệnh
 ## ⚠️ Nhược điểm & Hướng cải tiến
 
 ### 1. Hiệu suất tìm kiếm khuôn mặt `Đã cải tiến`
-- **Vấn đề:** Đang dùng vòng lặp `for` tính L2 distance từng cặp embedding. Khi có hàng nghìn user, tốc độ rất chậm.
-- **Cải tiến đã làm:** Dùng **ChromaDB PersistentClient** tại `data/chroma/` làm vector store local ưu tiên. FAISS/NumPy giữ vai trò fallback khi Chroma không khởi tạo được.
+- **Giới hạn:** Truy vấn toàn bộ template để kiểm tra khoảng cách với danh tính thứ hai; chưa có benchmark khả năng mở rộng thực tế.
+- **Cải tiến đã làm:** Dùng **ChromaDB PersistentClient** tại `data/authorization/chroma/` làm vector store local ưu tiên. FAISS/NumPy giữ vai trò fallback từ gallery đã kiểm tra.
   > Chroma lưu FaceNet embedding 512-D và metadata identity tối thiểu; ảnh khuôn mặt không được lưu trong vector store.
-  > Collection hiện được version theo contract `FaceNet-512 + L2`. Prototype chưa tự đồng bộ việc thêm/xóa user sau lần seed đầu tiên; cần rebuild local store và restart backend khi gallery thay đổi. Embedding là dữ liệu sinh trắc nhạy cảm, vì vậy `.gitignore` không thay thế mã hóa, phân quyền filesystem hoặc chính sách lưu giữ dữ liệu.
+  > Backend kiểm tra gallery revision trước truy vấn và đổi snapshot hợp lệ sau thay đổi HTTP. Chỉ quy trình CLI `sync` vẫn yêu cầu dừng backend rồi restart. Collection revision cũ còn lưu trên đĩa; `.gitignore` không thay thế mã hóa, ACL hoặc chính sách retention/xóa dữ liệu.
 
 ### 2. Dữ liệu train còn hạn chế
-- **Vấn đề:** Dataset Anti-Spoofing tự thu thập nhỏ, ít đa dạng → model dễ nhầm khi ánh sáng yếu hoặc góc nghiêng.
-- **Hướng cải tiến:** Tăng cường Augmentation mạnh hơn (đổi sáng, contrast, blur ngẫu nhiên). Bổ sung dataset công khai như **CelebA-Spoof** hoặc **LCC-FASD**.
+- **Vấn đề:** Split v1 không hợp lệ cho đánh giá do trùng/rò rỉ; v2 chưa có mẫu phát hành. Chưa được tuyên bố độ chính xác.
+- **Đã bổ sung:** Adapter CelebA-Spoof chuẩn hóa nhãn và BGR 128×128, đề xuất chia nhóm 70/15/15, quarantine khi thiếu provenance. Cần ảnh/annotation nguồn hợp lệ; [lần tải hiện tại chưa lấy được mẫu](docs/external-datasets.md).
 
 ### 3. Bảo mật API
-- **Vấn đề:** Endpoint `/predict` và `/logs/export` không có xác thực. Ai biết URL đều gọi được.
-- **Hướng cải tiến:** Tích hợp **JWT Token** — server trả về token sau khi nhận diện thành công, các request tới `/logs/*` phải đính kèm `Authorization: Bearer <token>`.
-
-
+- **Đã làm:** `/predict` chỉ cấp bearer token opaque sau xác thực và kiểm tra ACTIVE; SQLite lưu hash token, hết hạn sau 1 giờ. `/logs` và `/logs/export` cho ADMIN/SUPER_ADMIN. API quản lý kiểm tra actor/target, chỉ SUPER_ADMIN được tạo ADMIN/đổi role; không có HTTP tạo/sửa SUPER_ADMIN. `/auth/me` đọc quyền hiện tại; đổi role/disable/delete thu hồi phiên. Frontend dùng `sessionStorage`, không quyết định quyền.
+- **Còn thiếu:** HTTPS khi triển khai, rate limiting, mã hóa/ACL dữ liệu sinh trắc học và quy trình retention/xóa đầy đủ; xem [runbook bảo mật](docs/face-authorization.md).
 
 ## 🧠 Công nghệ sử dụng
 
