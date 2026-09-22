@@ -47,10 +47,15 @@ class RecognitionDecision:
     match: MatchResult | None = None
     distance: float | None = None
     runner_up_distance: float | None = None
+    best_identity: str | None = None
+    runner_up_identity: str | None = None
 
     def to_dict(self):
         return {"decision": self.decision, "recognition_distance": self.distance,
-                "runner_up_distance": self.runner_up_distance, "metric": "normalized_l2"}
+                "runner_up_distance": self.runner_up_distance,
+                "best_identity": self.best_identity,
+                "runner_up_identity": self.runner_up_identity,
+                "metric": "normalized_l2"}
 
 
 class IdentityIndex:
@@ -198,14 +203,17 @@ class IdentityIndex:
             raise IdentityIndexError("Vector search returned no candidates")
 
         username, best_distance = ranked[0]
+        runner_up_identity = ranked[1][0] if len(ranked) > 1 else None
         runner_up = ranked[1][1] if len(ranked) > 1 else None
         if best_distance > self.distance_threshold:
-            return RecognitionDecision("UNKNOWN", distance=best_distance, runner_up_distance=runner_up)
+            return RecognitionDecision("UNKNOWN", distance=best_distance, runner_up_distance=runner_up,
+                                       best_identity=username, runner_up_identity=runner_up_identity)
         if runner_up is not None and runner_up - best_distance < self.min_margin:
-            return RecognitionDecision("AMBIGUOUS", distance=best_distance, runner_up_distance=runner_up)
+            return RecognitionDecision("AMBIGUOUS", distance=best_distance, runner_up_distance=runner_up,
+                                       best_identity=username, runner_up_identity=runner_up_identity)
 
         return RecognitionDecision("MATCH", MatchResult(username, best_distance, runner_up),
-                                   best_distance, runner_up)
+                                   best_distance, runner_up, username, runner_up_identity)
 
     @staticmethod
     def _minimum_identity_distances(

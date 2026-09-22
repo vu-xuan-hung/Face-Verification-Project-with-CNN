@@ -9,7 +9,7 @@
 
 ## System Goal
 
-V-Shield's login UI captures a webcam frame, rejects invalid or spoof presentations, embeds a valid face with FaceNet, searches enrolled identities, obtains the matched user's role, and records a successful login. The HTTP API still receives a client-supplied base64 frame, so passive PAD remains the security boundary against static-image replay. It is a small-scale capstone system, not a production biometric identity platform.
+V-Shield's login UI captures a webcam frame, rejects invalid or spoof presentations, embeds a valid face with FaceNet, searches enrolled identities, obtains the matched user's role, and records a successful login. The HTTP API still receives a client-supplied base64 frame, so passive PAD remains the security boundary against static-image replay. It is a small-scale reference system, not a production biometric identity platform.
 
 ## Runtime Architecture
 
@@ -48,8 +48,8 @@ The anti-spoof stage is fail-closed: FaceNet and identity search run only after 
 | Trusted local enrollment | `src/vshield/services/enrollment.py`, `scripts/manage-identities.py` |
 | Identity search | `src/vshield/core/identity_index.py` |
 | Persistent vector store | `src/vshield/core/chroma_identity_index.py`, ChromaDB local |
-| PAD evaluation | `src/vshield/evaluation/pad_metrics.py` |
-| Identity retrieval evaluation | `src/vshield/evaluation/recognition_metrics.py` |
+| Production-coupled biometric evaluation | `src/vshield/evaluation/adapter.py`, `pad_runner.py`, `recognition_runner.py`, `e2e_runner.py` |
+| Evaluation manifests, leakage audit, calibration, metrics, plots, reports | `src/vshield/evaluation/`, `scripts/evaluate_*.py`, `scripts/calibrate_*.py` |
 | PAD training | `src/vshield/training/train.py` |
 | Browser client | `frontend/src/` |
 
@@ -133,7 +133,7 @@ Frontend routes include login, admin dashboard, and user dashboard. The admin sc
 
 ## Current Limitations
 
-- `artifacts/models/` currently contains no PAD model artifact; missing or invalid model state returns authentication unavailable (`503`). Real biometric login has not been validated.
+- The checksum-pinned MiniFASNetV2 ONNX artifact is present and passes its contract smoke test. Real biometric performance remains unvalidated because no released PAD or independent recognition/e2e evaluation dataset exists.
 - Enrollment supports authenticated management HTTP/UI with 2–10 consented images and a trusted local CLI (1–20 photos). The first SUPER_ADMIN requires explicit one-time local bootstrap. No API creates or mutates SUPER_ADMIN. CLI sync remains an offline stop/restart workflow; HTTP changes refresh the revision-aware index without restart. No complete biometric erasure or owner-transfer workflow exists.
 - Duplicate face and same-identity gates use an uncalibrated L2 threshold (0.9), not demonstrated biometric accuracy. Enrollment is operator-supervised, not an independent identity/liveness proof. An account committed before index refresh failure returns `vector_sync_status=pending`, avoiding false failure/retry; matching retries refresh.
 - Soft deletion retains account, photos, manifests, audit and old revision collections; it excludes the identity from the current snapshot and revokes sessions, not physical biometric erasure.
@@ -152,14 +152,11 @@ Frontend routes include login, admin dashboard, and user dashboard. The admin sc
 - External dataset intake runbook: `docs/external-datasets.md`.
 - Dependencies: `pyproject.toml`.
 - Runtime code: `src/vshield/api/`, `src/vshield/core/`, `src/vshield/services/`.
-- Evaluation code: `src/vshield/evaluation/`.
+- Evaluation code: `src/vshield/evaluation/`; source-referenced production audit: `docs/evaluation/VSHIELD_EVALUATION_AUDIT.md`; collection protocol: `evaluation_data/README.md`.
 - Frontend: `frontend/src/`.
-- AI/ML audit: `plans/vshield-ai-ml-audit-2026-07-30.md`.
-- Remediation status: `plans/vshield-data-integrity-remediation/`.
 - v1 invalidation: `artifacts/evaluation/v1/INVALID.md`.
 - v2 status: `artifacts/evaluation/v2/data-card.md` and `data-release-audit.json`.
 
 ## Unresolved Questions
 
-- University capstone template, citation style, page limit, and required chapter structure have not been supplied.
 - A recognition gallery/probe collection protocol must be approved before reporting real top-k metrics.

@@ -53,17 +53,17 @@ def test_low_resolution_pixel_shortcut_is_detected(tmp_path: Path):
     assert result["auc"] == 1.0
 
 
-def test_pad_threshold_uses_strict_greater_than():
+def test_pad_threshold_matches_production_inclusive_boundary():
     labels = np.asarray([0, 0, 1, 1])
     scores = np.asarray([0.1, 0.5, 0.5, 0.9])
     rates = error_rates(labels, scores, threshold=0.5)
-    assert rates["apcer"] == 0.0
-    assert rates["bpcer"] == 0.5
+    assert rates["apcer"] == 0.5
+    assert rates["bpcer"] == 0.0
 
 
 def test_threshold_selection_minimizes_validation_acer():
     labels = np.asarray([0, 0, 1, 1])
     scores = np.asarray([0.1, 0.2, 0.8, 0.9])
     threshold, rates = select_threshold(labels, scores)
-    assert 0.2 <= threshold < 0.8
+    assert 0.2 < threshold <= 0.8
     assert rates["acer"] == 0.0
