@@ -1,11 +1,11 @@
 # Stage 1: Build React App
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
 # Copy package.json và cài đặt thư viện
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm ci
 
 # Copy source code và build
 COPY . .
