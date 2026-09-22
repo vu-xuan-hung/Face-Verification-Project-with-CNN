@@ -1,0 +1,32 @@
+evaluation:
+  seed: 42
+  device: auto
+
+data:
+  pad_test_manifest: evaluation_data/pad_test.csv
+  pad_calibration_manifest: evaluation_data/pad_calibration.csv
+  recognition_manifest: evaluation_data/recognition_test.csv
+  e2e_manifest: evaluation_data/e2e_test.csv
+
+pad:
+  threshold: production
+  save_scores: true
+
+recognition:
+  threshold: production
+  ambiguity_threshold: production
+  gallery_strategy: production
+
+calibration:
+  pad_objective: min-acer
+  pad_target: null
+  recognition_objective: min-open-set-error
+  recognition_target: null
+
+performance:
+  warmup_runs: 5
+  measure_latency: true
+
+output:
+  root: outputs/evaluation
+  save_plots: true
