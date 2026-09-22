@@ -75,6 +75,7 @@ data/faces/
 data/chroma/
 data/authorization/
 data/external/
+data/MiniFASNetDataset/
 *.db-wal
 *.db-shm
 # Keep data/ directory itself (via .gitkeep)
@@ -89,9 +90,15 @@ artifacts/models/*.tflite
 artifacts/models/*.onnx
 artifacts/models/*.pt
 artifacts/models/*.pth
+*.pth
+*.ckpt
 *.h5
 *.pkl
 *.joblib
+
+# Local training and evaluation artifacts
+pretrain/
+outputs/
 
 # -----------------------------------------------------------------------------
 # Database files
@@ -107,7 +114,12 @@ artifacts/models/*.pth
 logs/
 tmp/
 .tmp-rbac-*/
+.audit-pytest-tmp-*/
 temp/
+test-*.txt
+
+# Generated handoff package
+submission/
 
 # -----------------------------------------------------------------------------
 # Frontend — Node.js / Vite
