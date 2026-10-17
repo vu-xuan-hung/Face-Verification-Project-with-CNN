@@ -23,7 +23,8 @@ def readiness(service):
     index = getattr(service, "identity_index", None)
     index_ready = (getattr(index, "available", False) is True
                    and getattr(index, "_revision", None) == revision and db_ready)
-    components = {"pad": pad_ready, "facenet": facenet_ready,
+    detector_ready = getattr(getattr(service, "face_preprocessor", None), "ready", False) is True
+    components = {"face_detector": detector_ready, "pad": pad_ready, "facenet": facenet_ready,
                   "identity_index": index_ready, "database": db_ready}
     return {"ready": all(components.values()), "components": components,
             "facenet_state": "LOADED" if facenet_ready else "NOT_LOADED"}

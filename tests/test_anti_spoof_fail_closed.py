@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from vshield.api import app as app_module
-from vshield.api import database
-from vshield.api.app import create_app, decode_image
+from vshield.api import database, image_decoding
+from vshield.api.app import create_app
+from vshield.api.image_decoding import decode_image
 from vshield.core.anti_spoof import (
     PadRejectedError,
     PadResult,
@@ -101,7 +101,7 @@ def make_service(pad_model):
 def post_predict(service):
     app = create_app(service, initialize_database=False)
     with TestClient(app) as client:
-        return client.post("/predict", json={"image": make_image_data()})
+        return client.post("/predict", files={"file": ("face.png", base64.b64decode(make_image_data().split(",")[1]), "image/png")})
 
 
 # ---------------------------------------------------------------------------
@@ -109,14 +109,14 @@ def post_predict(service):
 # ---------------------------------------------------------------------------
 
 def test_decode_image_rejects_large_encoded_payload(monkeypatch):
-    monkeypatch.setattr(app_module, "MAX_ENCODED_IMAGE_BYTES", 3)
+    monkeypatch.setattr(image_decoding, "MAX_ENCODED_IMAGE_BYTES", 3)
 
     with pytest.raises(ValueError, match="too large"):
         decode_image("data:image/png;base64,AAAAAA==")
 
 
 def test_decode_image_rejects_excessive_pixel_count(monkeypatch):
-    monkeypatch.setattr(app_module, "MAX_IMAGE_PIXELS", 4)
+    monkeypatch.setattr(image_decoding, "MAX_IMAGE_PIXELS", 4)
 
     with pytest.raises(ValueError, match="too large"):
         decode_image(make_image_data())

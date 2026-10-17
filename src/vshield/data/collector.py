@@ -2,11 +2,7 @@
 Real-time face data collector.
 
 Captures face crops from a webcam and saves them (image + YOLO label)
-to the configured output directory. Includes:
-
-  - Blur detection (Laplacian variance) to ensure sharp crops
-  - Blink detection via Eye Aspect Ratio (EAR) with MediaPipe
-  - Foreground motion estimation with MOG2 background subtraction
+to the configured output directory. Rejects blurry crops using Laplacian variance.
 
 Usage:
     python -m vshield.data.collector --class-id 1 --output data/raw/real
@@ -26,7 +22,6 @@ from pathlib import Path
 
 import cv2
 import cvzone
-import mediapipe as mp
 import numpy as np
 from cvzone.FaceDetectionModule import FaceDetector
 
@@ -34,24 +29,9 @@ from cvzone.FaceDetectionModule import FaceDetector
 # Defaults (can be overridden via CLI)
 # ---------------------------------------------------------------------------
 _BLUR_THRESHOLD = 35  # Laplacian var below this → blurry → skip
-_BLINK_THRESHOLD = 0.20  # EAR below this → blink detected
 _CONFIDENCE = 0.80  # Minimum face detection confidence
 _EXPAND_PCT = 10  # Face bounding-box expansion in %
 _CAM_W, _CAM_H = 640, 480
-
-
-# ---------------------------------------------------------------------------
-# Eye Aspect Ratio
-# ---------------------------------------------------------------------------
-
-
-def _ear(eye: list[np.ndarray]) -> float:
-    """Compute the Eye Aspect Ratio for blink detection."""
-
-    def _d(a: np.ndarray, b: np.ndarray) -> float:
-        return float(np.linalg.norm(a - b))
-
-    return (_d(eye[1], eye[5]) + _d(eye[2], eye[4])) / (2.0 * _d(eye[0], eye[3]))
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +40,7 @@ def _ear(eye: list[np.ndarray]) -> float:
 
 
 class DataCollector:
-    """Webcam-based face crop collector with liveness heuristics.
+    """Webcam-based face crop collector with a blur quality check.
 
     Parameters
     ----------
@@ -73,10 +53,6 @@ class DataCollector:
     confidence:
         Minimum CvZone FaceDetector confidence score.
     """
-
-    # MediaPipe face mesh landmark indices for left/right eye
-    _LEFT_EYE_IDX = [33, 160, 158, 133, 153, 144]
-    _RIGHT_EYE_IDX = [362, 385, 387, 263, 373, 380]
 
     def __init__(
         self,
@@ -97,10 +73,6 @@ class DataCollector:
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, _CAM_H)
 
         self._detector = FaceDetector(minDetectionCon=self.confidence)
-        self._face_mesh = mp.solutions.face_mesh.FaceMesh(refine_landmarks=True)
-        self._bg_sub = cv2.createBackgroundSubtractorMOG2(
-            history=500, varThreshold=16, detectShadows=True
-        )
 
     def run(self) -> None:
         """Start the capture loop. Press ``q`` to quit."""

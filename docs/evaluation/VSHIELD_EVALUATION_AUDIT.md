@@ -8,7 +8,7 @@ This document is source-first. Values below are implementation facts, not measur
 
 ## Production decision flow
 
-`POST /predict` decodes a bounded base64 image to OpenCV BGR `uint8`, then calls `AuthenticationService.authenticate` (`src/vshield/api/app.py:40-71,145-166`). Authentication requires exactly one detected face, runs PAD on the original frame and detected bounding box, and runs FaceNet plus identity search only after PAD returns `REAL` (`src/vshield/services/authentication.py:55-99`). A biometric match is not sufficient for access: `/predict` calls `sessions.create_session`, which reloads the matched account from SQLite and requires `active=1`, `status='ACTIVE'`, and a recognized role (`src/vshield/api/app.py:250-307`; `src/vshield/api/sessions.py:23-60`).
+`POST /predict` accepts a bounded JPEG/PNG multipart upload in field `file`, validates its content and matching MIME, decodes it to OpenCV BGR `uint8`, then calls `AuthenticationService.authenticate`. Authentication requires exactly one detected face, runs PAD on the original frame and detected bounding box, and runs FaceNet plus identity search only after PAD returns `REAL` (`src/vshield/services/authentication.py:55-99`). A biometric match is not sufficient for access: `/predict` calls `sessions.create_session`, which reloads the matched account from SQLite and requires `active=1`, `status='ACTIVE'`, and a recognized role (`src/vshield/api/prediction_routes.py`, `predict`; `src/vshield/api/sessions.py:23-60`).
 
 ## Face detection, crop, and alignment
 
@@ -73,7 +73,7 @@ After a biometric `MATCH`, SQLite remains authoritative: `sessions.create_sessio
 
 | Evaluation component | Production implementation reused |
 |---|---|
-| Image decoding | OpenCV BGR decode with the production size constraints mirrored by the dataset validator; API data-URI decoding remains `vshield.api.app.decode_image` |
+| Image decoding | OpenCV BGR decode with the production size constraints mirrored by the dataset validator; multipart decoding uses `vshield.api.image_decoding.decode_image_bytes`; enrollment data-URI decoding uses `vshield.api.image_decoding.decode_image` |
 | Face detector/crops | `vshield.core.face_preprocessor.FacePreprocessor.extract` |
 | PAD preprocessing/model/decision | `vshield.core.anti_spoof.build_pad_service` and `check_pad`, which call `MiniFASNetONNX` and `prepare_pad_input` |
 | FaceNet preprocessing/model/normalization | `vshield.core.embedder.FaceEmbedder.encode` and `normalize_embedding` |

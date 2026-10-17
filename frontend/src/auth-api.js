@@ -31,13 +31,6 @@ export function validateIdentity(identity) {
     role: identity.role, status: identity.status };
 }
 
-export function logsPath(path, username, date) {
-  const query = new URLSearchParams();
-  if (username) query.set('username', username);
-  if (date) query.set('date', date);
-  return `${path}?${query}`;
-}
-
 export function accessLogsPath(path, params = {}) {
   const query = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {

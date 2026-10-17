@@ -156,14 +156,14 @@ def test_disabled_recognized_identity_and_existing_token_denied(managed):
 
     token = auth("member")
     with TestClient(create_app(Recognized(), user_management_service=managed)) as client:
-        assert client.post("/predict", json={"image": photos()[0]}).status_code == 200
+        assert client.post("/predict", files={"file": ("face.png", base64.b64decode(photos()[0].split(",")[1]), "image/png")}).status_code == 200
         assert (
             client.patch(
                 f"/users/{target}/status", json={"status": "DISABLED"}, headers=auth("manager")
             ).status_code
             == 200
         )
-        assert client.post("/predict", json={"image": photos()[0]}).status_code == 403
+        assert client.post("/predict", files={"file": ("face.png", base64.b64decode(photos()[0].split(",")[1]), "image/png")}).status_code == 403
         assert client.get("/auth/me", headers=token).status_code == 401
 
 

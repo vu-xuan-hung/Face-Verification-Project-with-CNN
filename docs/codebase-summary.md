@@ -9,13 +9,13 @@
 
 ## System Goal
 
-V-Shield's login UI captures a webcam frame, rejects invalid or spoof presentations, embeds a valid face with FaceNet, searches enrolled identities, obtains the matched user's role, and records a successful login. The HTTP API still receives a client-supplied base64 frame, so passive PAD remains the security boundary against static-image replay. It is a small-scale reference system, not a production biometric identity platform.
+V-Shield's login UI captures a webcam frame, rejects invalid or spoof presentations, embeds a valid face with FaceNet, searches enrolled identities, obtains the matched user's role, and records a successful login. The HTTP API still receives a client-supplied JPEG/PNG multipart frame, so passive PAD remains the security boundary against static-image replay. It is a small-scale reference system, not a production biometric identity platform.
 
 ## Runtime Architecture
 
 ```mermaid
 flowchart LR
-    UI[React login UI] -->|base64 image| API[FastAPI /predict]
+    UI[React login UI] -->|multipart image| API[FastAPI /predict]
     API --> PRE[Detect exactly one face\nand create model crops]
     PRE --> PAD[Anti-spoof CNN]
     PAD -->|fake or unavailable| REJECT[Reject]
@@ -32,8 +32,12 @@ The anti-spoof stage is fail-closed: FaceNet and identity search run only after 
 
 | Concern | Current implementation |
 |---|---|
-| HTTP transport | `src/vshield/api/app.py` |
-| Request schema | `src/vshield/api/schemas.py` |
+| Application lifecycle and middleware | `src/vshield/api/app.py` |
+| Image upload and authentication route | `src/vshield/api/prediction_routes.py` |
+| Bounded image decoding | `src/vshield/api/image_decoding.py` |
+| Session and readiness routes | `src/vshield/api/auth_routes.py` |
+| Access logs, CSV export and dashboard routes | `src/vshield/api/log_routes.py` |
+| User administration request schemas | `src/vshield/api/user_schemas.py` |
 | Roles and login audit | `src/vshield/api/database.py`, SQLite |
 | Revocable bearer sessions and RBAC | `src/vshield/api/sessions.py` |
 | Three-role schema and migration | `src/vshield/api/roles.py`, `migrations.py`, `bootstrap.py` |
@@ -56,9 +60,9 @@ The anti-spoof stage is fail-closed: FaceNet and identity search run only after 
 ## Authentication Flow
 
 1. React captures a webcam frame; the login page does not expose static-image upload.
-2. The client sends a base64 data URI to `POST /predict`.
-3. FastAPI validates encoded size, decoded pixel count, and image format.
-4. The preprocessor requires exactly one face and produces model-specific crops.
+2. The client sends a JPEG Blob as multipart field `file` to `POST /predict`.
+3. FastAPI bounds the multipart body and validates file size (8 MiB), decoded pixel count (20 million), JPEG/PNG content and matching MIME before BGR uint8 decoding.
+4. The preprocessor uses hash-pinned YOLOv8n-Face ONNX detection, requires exactly one retained face and produces model-specific crops. See [detector setup and migration](yolo-face-detector.md).
 5. The PAD CNN classifies the presentation. Fake, invalid, or unavailable states fail closed.
 6. FaceNet produces a 512-dimensional embedding; code validates and L2-normalizes it.
 7. ChromaDB queries the nearest stored FaceNet templates using L2 distance, then the identity index applies the existing distance threshold and runner-up margin. FAISS/NumPy is the startup fallback.

@@ -5,6 +5,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from vshield.api import sessions, user_store
+from vshield.api.image_decoding import decode_image
 from vshield.api.user_schemas import CreateUserInput, RoleInput, StatusInput, UpdateUserInput
 from vshield.core.anti_spoof import PadRejectedError, PadStatus
 from vshield.core.embedder import EmbeddingError
@@ -19,8 +20,14 @@ def execute(operation):
         return operation()
     except PadRejectedError as exc:
         code = 503 if exc.result.status is PadStatus.ERROR else 403
-        raise HTTPException(code, detail={"code": exc.result.reason, "pad": exc.result.to_dict(),
-                                        "message": "Enrollment denied by liveness gate"}) from exc
+        raise HTTPException(
+            code,
+            detail={
+                "code": exc.result.reason,
+                "pad": exc.result.to_dict(),
+                "message": "Enrollment denied by liveness gate",
+            },
+        ) from exc
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except LookupError as exc:
@@ -39,9 +46,6 @@ def execute(operation):
 
 
 def create(data, request, actor, role):
-    # Imported lazily to keep the application transport's existing decode contract.
-    from vshield.api.app import decode_image
-
     service = request.app.state.user_management_service
     if service is None:
         raise HTTPException(503, "Enrollment service unavailable")

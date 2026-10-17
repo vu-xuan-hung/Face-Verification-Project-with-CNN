@@ -1,10 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { API_URL, TOKEN_KEY, accessLogsPath, apiRequest, logsPath, validateIdentity } from '../src/auth-api.js';
+import { API_URL, TOKEN_KEY, accessLogsPath, apiRequest, validateIdentity } from '../src/auth-api.js';
 
 test('API defaults and session key are namespaced', () => {
   assert.equal(API_URL, 'http://localhost:8000');
   assert.equal(TOKEN_KEY, 'vshield.access_token');
+});
+
+test('prediction sends multipart file without overriding the browser boundary', async () => {
+  const original = globalThis.fetch;
+  const image = new Blob(['image fixture'], { type: 'image/jpeg' });
+  const body = new FormData();
+  body.append('file', image, 'face.jpg');
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, `${API_URL}/predict`);
+    assert.equal(options.method, 'POST');
+    assert.equal(options.body, body);
+    assert.equal(options.body.get('file').name, 'face.jpg');
+    assert.equal(options.body.get('file').type, 'image/jpeg');
+    assert.equal(options.headers.has('Content-Type'), false);
+    return new Response(JSON.stringify({ success: false, code: 'UNKNOWN' }));
+  };
+  try {
+    await apiRequest('/predict', { method: 'POST', body });
+  } finally { globalThis.fetch = original; }
 });
 
 test('protected requests attach bearer and preserve caller headers/signal', async () => {
@@ -65,7 +84,7 @@ test('prediction HTTP errors preserve message and prefer textual detail when pre
 });
 
 test('CSV and log query filters are safely encoded', () => {
-  const path = logsPath('/logs/export', 'a&role=admin', '2026-09-09');
+  const path = accessLogsPath('/logs/export', { username: 'a&role=admin', date: '2026-09-09' });
   const url = new URL(path, API_URL);
   assert.equal(url.pathname, '/logs/export');
   assert.equal(url.searchParams.get('username'), 'a&role=admin');

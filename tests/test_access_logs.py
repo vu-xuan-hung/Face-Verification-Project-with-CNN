@@ -1,6 +1,5 @@
 """Tests for persistent access logs, RBAC enforcement, filtering, and dashboard statistics."""
 
-import base64
 import sqlite3
 
 import cv2
@@ -45,7 +44,7 @@ def make_dummy_image():
     img = np.zeros((32, 32, 3), dtype=np.uint8)
     ok, encoded = cv2.imencode(".png", img)
     assert ok
-    return "data:image/png;base64," + base64.b64encode(encoded).decode("ascii")
+    return {"file": ("face.png", encoded.tobytes(), "image/png")}
 
 
 @pytest.fixture
@@ -89,7 +88,7 @@ def test_spoof_attempt_creates_correct_log(test_db):
     auth_svc = MockAuthService(outcome)
     app = create_app(auth_svc, initialize_database=False)
     with TestClient(app) as client:
-        resp = client.post("/predict", json={"image": make_dummy_image()})
+        resp = client.post("/predict", files=make_dummy_image())
         assert resp.status_code == 403
 
     logs = database.get_access_logs(db_path=test_db)
@@ -124,7 +123,7 @@ def test_unknown_face_creates_correct_log(test_db):
     auth_svc = MockAuthService(outcome)
     app = create_app(auth_svc, initialize_database=False)
     with TestClient(app) as client:
-        resp = client.post("/predict", json={"image": make_dummy_image()})
+        resp = client.post("/predict", files=make_dummy_image())
         assert resp.status_code == 403
 
     logs = database.get_access_logs(db_path=test_db)
@@ -157,7 +156,7 @@ def test_ambiguous_face_creates_correct_log(test_db):
     auth_svc = MockAuthService(outcome)
     app = create_app(auth_svc, initialize_database=False)
     with TestClient(app) as client:
-        resp = client.post("/predict", json={"image": make_dummy_image()})
+        resp = client.post("/predict", files=make_dummy_image())
         assert resp.status_code == 403
 
     logs = database.get_access_logs(db_path=test_db)
@@ -190,7 +189,7 @@ def test_disabled_recognized_user_creates_denied_log(test_db):
     auth_svc = MockAuthService(outcome)
     app = create_app(auth_svc, initialize_database=False)
     with TestClient(app) as client:
-        resp = client.post("/predict", json={"image": make_dummy_image()})
+        resp = client.post("/predict", files=make_dummy_image())
         assert resp.status_code == 403
 
     logs = database.get_access_logs(db_path=test_db)
@@ -207,7 +206,7 @@ def test_successful_recognition_creates_granted_log(test_db):
     auth_svc = MockAuthService()
     app = create_app(auth_svc, initialize_database=False)
     with TestClient(app) as client:
-        resp = client.post("/predict", json={"image": make_dummy_image()})
+        resp = client.post("/predict", files=make_dummy_image())
         assert resp.status_code == 200
 
     logs = database.get_access_logs(db_path=test_db)
@@ -227,7 +226,7 @@ def test_pad_unavailable_and_pad_error_logs(test_db):
     ))
     app = create_app(auth_svc, initialize_database=False)
     with TestClient(app) as client:
-        resp = client.post("/predict", json={"image": make_dummy_image()})
+        resp = client.post("/predict", files=make_dummy_image())
         assert resp.status_code == 503
 
     # PAD_ERROR
@@ -238,7 +237,7 @@ def test_pad_unavailable_and_pad_error_logs(test_db):
     ))
     app2 = create_app(auth_svc2, initialize_database=False)
     with TestClient(app2) as client:
-        resp2 = client.post("/predict", json={"image": make_dummy_image()})
+        resp2 = client.post("/predict", files=make_dummy_image())
         assert resp2.status_code == 503
 
     logs = database.get_access_logs(db_path=test_db)
@@ -272,7 +271,7 @@ def test_access_logs_me_isolation(test_db):
 
     # Perform a successful login for member
     with TestClient(app) as client:
-        client.post("/predict", json={"image": make_dummy_image()})
+        client.post("/predict", files=make_dummy_image())
 
     # Log an event for manager
     database.log_access_event(
@@ -396,6 +395,6 @@ def test_logging_failure_preserves_fail_closed_security(test_db, monkeypatch):
     auth_svc = MockAuthService(spoof_outcome)
     app = create_app(auth_svc, initialize_database=False)
     with TestClient(app) as client:
-        resp = client.post("/predict", json={"image": make_dummy_image()})
+        resp = client.post("/predict", files=make_dummy_image())
         # Security decision MUST remain 403 Forbidden fail-closed!
         assert resp.status_code == 403

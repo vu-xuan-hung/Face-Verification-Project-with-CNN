@@ -15,8 +15,6 @@ from vshield.core.identity_index import (
     IdentityIndexError,
     IdentityIndexUnavailableError,
     MatchResult,
-    flatten_database_embeddings,
-    import_faiss,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,18 +59,6 @@ def load_database(
             database_faces[user_folder.name] = embeddings
 
     return database_faces
-
-
-def build_faiss_index(database_faces):
-    """Backward-compatible FAISS builder with enforced vector normalization."""
-    matrix, names = flatten_database_embeddings(database_faces)
-    faiss = import_faiss()
-    if faiss is None or matrix.size == 0:
-        return None, None
-
-    index = faiss.IndexFlatL2(matrix.shape[1])
-    index.add(matrix)
-    return index, dict(enumerate(names))
 
 
 def who_is_it(
@@ -122,7 +108,6 @@ __all__ = [
     "IdentityIndexUnavailableError",
     "MatchResult",
     "UNKNOWN_IDENTITY",
-    "build_faiss_index",
     "load_database",
     "who_is_it",
 ]

@@ -38,7 +38,9 @@ class VShieldEvaluationAdapter:
         face_embedder=None,
     ) -> None:
         self.project_root = Path(project_root).resolve()
-        self.face_preprocessor = face_preprocessor or FacePreprocessor()
+        self.face_preprocessor = face_preprocessor or FacePreprocessor(
+            model_path=self.project_root / "artifacts/models/yolov8n-face-lindevs.onnx"
+        )
         self.pad_service = pad_service or build_pad_service(
             self.project_root / "configs" / "ai-models.yaml"
         )

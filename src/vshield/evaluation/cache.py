@@ -24,6 +24,7 @@ def embedding_fingerprint(
     root = Path(project_root)
     sources = [
         root / "src/vshield/core/face_preprocessor.py",
+        root / "src/vshield/core/yolo_face_detector.py",
         root / "src/vshield/core/embedder.py",
         root / "src/vshield/core/identity_index.py",
     ]
@@ -38,6 +39,8 @@ def embedding_fingerprint(
         "contract": "facenet-512-l2-bgr-v1",
         "sample_hashes": sorted(sample_hashes or []),
     }
+    detector = root / "artifacts/models/yolov8n-face-lindevs.onnx"
+    payload["face_detector_sha256"] = file_hash(detector) if detector.is_file() else None
     weights = Path.home() / ".keras-facenet/20180402-114759/20180402-114759-weights.h5"
     payload["facenet_weights_sha256"] = file_hash(weights) if weights.is_file() else None
     encoded = json.dumps(payload, sort_keys=True).encode()

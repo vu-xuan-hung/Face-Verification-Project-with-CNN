@@ -63,7 +63,7 @@ FaceNet và MiniFASNet sử dụng hai preprocessing path riêng. PAD nhận cro
 | Face recognition | pretrained `keras-facenet` FaceNet |
 | Anti-spoofing | pretrained MiniFASNetV2, ONNX Runtime CPU |
 | Vector search | ChromaDB persistent, FAISS/NumPy fallback |
-| Image processing | OpenCV, Pillow, MediaPipe/Haar pipeline hiện tại |
+| Image processing | YOLOv8n-Face (ONNX), OpenCV, Pillow; Haar căn chỉnh mắt |
 | Tests | pytest, Node test runner |
 
 ## Phân quyền
@@ -182,11 +182,7 @@ Chuẩn bị ít nhất hai ảnh khác nhau của cùng một người, có s�
 Windows PowerShell:
 
 ```powershell
-uv run python scripts/manage-identities.py enroll `
-  --username admin_root `
-  --role ADMIN `
-  --images "D:\faces\admin-1.jpg" "D:\faces\admin-2.jpg" `
-  --consent
+uv run python scripts/manage-identities.py enroll --username admin_root --role ADMIN --images "C:\Users\LOQ\Desktop\ml-ai-dl\project\image.png" --consent
 
 uv run python scripts/manage-identities.py bootstrap-super-admin --username admin_root
 uv run python scripts/manage-identities.py sync
@@ -297,7 +293,7 @@ Disable account và delete biometric data là hai hành động khác nhau. Back
 
 | Method | Endpoint | Quyền | Mục đích |
 |---|---|---|---|
-| `POST` | `/predict` | Public input | Face authentication, trả session nếu thành công |
+| `POST` | `/predict` | Public input | JPEG/PNG multipart `file`; face authentication, trả session nếu thành công |
 | `GET` | `/health/ready` | Public | Trạng thái PAD, FaceNet, identity index và database |
 | `GET` | `/auth/me` | Authenticated | Lấy identity từ session |
 | `POST` | `/auth/logout` | Authenticated | Thu hồi session hiện tại |
@@ -314,6 +310,8 @@ Disable account và delete biometric data là hai hành động khác nhau. Back
 | `GET` | `/dashboard/stats` | ADMIN+ | Thống kê dashboard |
 
 Không gửi embedding vector, filesystem path, stack trace hoặc secret config trong API response.
+
+See [direct image upload examples and limits](docs/predict-upload.md) for `/predict`.
 
 ## Database và dữ liệu runtime
 
