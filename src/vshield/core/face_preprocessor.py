@@ -8,6 +8,8 @@ from threading import Lock
 import cv2
 import numpy as np
 
+from vshield.core.yolo_face_detector import DEFAULT_MODEL_PATH, YoloFaceDetector
+
 ANTI_SPOOF_SIZE = (128, 128)
 
 
@@ -36,12 +38,19 @@ class FaceCrops:
 class FacePreprocessor:
     """Detect one face and prepare anti-spoof and FaceNet crops."""
 
-    def __init__(self, face_detector=None, eye_detector=None):
-        self.face_detector = face_detector or self._load_cascade(
-            "haarcascade_frontalface_default.xml"
-        )
+    def __init__(self, face_detector=None, eye_detector=None, *, model_path=DEFAULT_MODEL_PATH):
+        self.face_detector = face_detector if face_detector is not None else YoloFaceDetector(model_path)
         self.eye_detector = eye_detector or self._load_cascade("haarcascade_eye.xml")
         self._detector_lock = Lock()
+
+    @property
+    def ready(self):
+        try:
+            with self._detector_lock:
+                self.face_detector.prepare()
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def _load_cascade(filename: str):
@@ -59,15 +68,8 @@ class FacePreprocessor:
         if image.dtype != np.uint8:
             image = np.clip(image, 0, 255).astype(np.uint8)
 
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        gray = cv2.equalizeHist(gray)
         with self._detector_lock:
-            detected = self.face_detector.detectMultiScale(
-                gray,
-                scaleFactor=1.05,
-                minNeighbors=4,
-                minSize=(30, 30),
-            )
+            detected = self.face_detector.detect(image)
         faces = list(detected)
         if len(faces) != 1:
             raise InvalidFaceCountError(len(faces))

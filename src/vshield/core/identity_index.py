@@ -193,9 +193,6 @@ class IdentityIndex:
             for username, distance in zip(self._names, distances, strict=True)
         ]
 
-    def _decide(self, candidates: list[tuple[str, float]]) -> MatchResult | None:
-        return self._decide_details(candidates).match
-
     def _decide_details(self, candidates: list[tuple[str, float]]) -> RecognitionDecision:
         per_identity = self._minimum_identity_distances(candidates)
         ranked = sorted(per_identity.items(), key=lambda item: item[1])

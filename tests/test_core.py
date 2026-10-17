@@ -4,14 +4,7 @@ Tests cơ bản cho V-Shield.
 Chạy: make test  hoặc  uv run pytest tests/ -v
 """
 
-import os
-import sys
-
 import numpy as np
-
-# Thêm src/ vào path để import được vshield
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
-
 
 # -------------------------------------------------------------------
 # Test verifier.py — who_is_it()

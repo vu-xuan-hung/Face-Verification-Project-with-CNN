@@ -22,6 +22,8 @@ export default function Login() {
   const busyRef = useRef(false);
   const requestRef = useRef(null);
 
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+
   useEffect(() => {
     aliveRef.current = true;
     return () => { aliveRef.current = false; requestRef.current?.abort(); };
@@ -51,7 +53,9 @@ export default function Login() {
     requestRef.current = controller;
     setFeedback(null);
     try {
-      const response = await apiRequest('/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image }), signal: controller.signal });
+      const body = new FormData();
+      body.append('file', image, 'face.jpg');
+      const response = await apiRequest('/predict', { method: 'POST', body, signal: controller.signal });
       const data = await response.json();
       if (!aliveRef.current || controller.signal.aborted) return;
       const status = loginFeedback(data.code, data.success, data.message, data.name || data.username);
@@ -83,8 +87,12 @@ export default function Login() {
     const scale = Math.min(1, 1024 / Math.max(width, height));
     canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale);
     canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
-    const encoded = canvas.toDataURL('image/jpeg', 0.9);
-    setPreview(encoded); sendToBackend(encoded);
+    canvas.toBlob(blob => {
+      if (!aliveRef.current) return;
+      if (!blob) { failImage(); return; }
+      setPreview(URL.createObjectURL(blob));
+      sendToBackend(blob);
+    }, 'image/jpeg', 0.9);
   };
   const capture = () => {
     const video = videoRef.current;

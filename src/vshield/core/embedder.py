@@ -101,11 +101,6 @@ def _get_default_embedder() -> FaceEmbedder:
     return _default_embedder
 
 
-def img_to_encoding_frame(frame: np.ndarray) -> np.ndarray:
-    """Backward-compatible wrapper around the default FaceNet adapter."""
-    return _get_default_embedder().encode(frame)
-
-
 def img_to_encoding_file(path: str | Path) -> np.ndarray:
     """Backward-compatible file embedding helper."""
     return _get_default_embedder().encode_file(path)

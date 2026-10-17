@@ -1,4 +1,5 @@
-import numpy as np
+"""Load historical Keras PAD artifacts for offline serialization checks."""
+
 import tensorflow as tf
 from tensorflow.keras import layers
 
@@ -18,11 +19,9 @@ CUSTOM_AUGMENTATION_LAYERS = {
 }
 
 
-class AntiSpoofingError(RuntimeError):
-    """Raised when anti-spoofing cannot produce a trustworthy result."""
-
 # --- Patch các lớp để loại bỏ quantization_config ---
 def patch_layer(cls):
+    """Allow historical layer configs that include quantization metadata."""
     original_from_config = getattr(cls, "from_config", None)
     if not original_from_config:
         return cls
@@ -34,11 +33,24 @@ def patch_layer(cls):
     cls.from_config = classmethod(new_from_config)
     return cls
 
+
 layer_classes = [
-    layers.Dense, layers.Conv2D, layers.DepthwiseConv2D, layers.BatchNormalization,
-    layers.Add, layers.Multiply, layers.Reshape, layers.Activation,
-    layers.GlobalAveragePooling2D, layers.GlobalMaxPooling2D, layers.Flatten,
-    layers.Dropout, layers.InputLayer, layers.ZeroPadding2D, layers.MaxPooling2D, layers.AveragePooling2D,
+    layers.Dense,
+    layers.Conv2D,
+    layers.DepthwiseConv2D,
+    layers.BatchNormalization,
+    layers.Add,
+    layers.Multiply,
+    layers.Reshape,
+    layers.Activation,
+    layers.GlobalAveragePooling2D,
+    layers.GlobalMaxPooling2D,
+    layers.Flatten,
+    layers.Dropout,
+    layers.InputLayer,
+    layers.ZeroPadding2D,
+    layers.MaxPooling2D,
+    layers.AveragePooling2D,
 ]
 
 for cls in layer_classes:
@@ -46,7 +58,7 @@ for cls in layer_classes:
         patch_layer(cls)
     except AttributeError:
         pass
-# ------------------------------------------------
+
 
 def load_anti_spoofing_model(model_path="artifacts/models/face_verify_v1.keras"):
     try:
@@ -59,27 +71,3 @@ def load_anti_spoofing_model(model_path="artifacts/models/face_verify_v1.keras")
     except Exception as e:
         print("Cannot load model:", e)
         return None
-
-def predict_is_real(model, face_batch):
-    if model is None:
-        raise AntiSpoofingError("Anti-spoofing model is unavailable")
-
-    try:
-        prediction = model.predict(face_batch, verbose=0)
-    except Exception as exc:
-        raise AntiSpoofingError("Anti-spoofing inference failed") from exc
-
-    try:
-        scores = np.asarray(prediction)
-        is_numeric = np.issubdtype(scores.dtype, np.number)
-        is_complex = np.issubdtype(scores.dtype, np.complexfloating)
-        if scores.size != 1 or not is_numeric or is_complex:
-            raise ValueError("expected exactly one score")
-        score = float(scores.reshape(-1)[0])
-    except Exception as exc:
-        raise AntiSpoofingError("Anti-spoofing returned an invalid score") from exc
-
-    if not np.isfinite(score) or not 0.0 <= score <= 1.0:
-        raise AntiSpoofingError("Anti-spoofing returned an invalid score")
-
-    return score > 0.5

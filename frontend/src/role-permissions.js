@@ -1,5 +1,4 @@
 // Presentation only: every operation is authorized again by the backend.
-export const ROLES = Object.freeze(['USER', 'ADMIN', 'SUPER_ADMIN']);
 export const isManager = user => user?.status === 'ACTIVE' && ['ADMIN', 'SUPER_ADMIN'].includes(user.role);
 export const canCreateAdmin = user => isManager(user) && user.role === 'SUPER_ADMIN';
 export function canManageUser(actor, target) {

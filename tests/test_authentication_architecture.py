@@ -26,6 +26,9 @@ class DetectorStub:
     def detectMultiScale(self, *_args, **_kwargs):  # noqa: N802 - OpenCV API
         return self.boxes
 
+    def detect(self, _image):
+        return self.boxes
+
 
 def unit_embedding(index: int) -> np.ndarray:
     embedding = np.zeros(512, dtype=np.float32)

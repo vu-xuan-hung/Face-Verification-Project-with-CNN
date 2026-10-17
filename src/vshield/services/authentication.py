@@ -101,7 +101,7 @@ class AuthenticationService:
 
 def build_default_authentication_service(project_root: str | Path) -> AuthenticationService:
     root = Path(project_root).resolve()
-    preprocessor = FacePreprocessor()
+    preprocessor = FacePreprocessor(model_path=root / "artifacts/models/yolov8n-face-lindevs.onnx")
     embedder = FaceEmbedder()
     pad = build_pad_service(root / "configs/ai-models.yaml")
     index = ManagedIdentityIndex(root / "data/authorization", root / "login_logs.db")

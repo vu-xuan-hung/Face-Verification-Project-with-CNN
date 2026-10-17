@@ -1,6 +1,5 @@
 """Real SQLite/session + HTTP authorization regression tests (no real face identities)."""
 
-import base64
 import sqlite3
 
 import cv2
@@ -36,7 +35,7 @@ class RecognizedFace:
 def image_payload():
     ok, encoded = cv2.imencode(".png", np.zeros((32, 32, 3), dtype=np.uint8))
     assert ok
-    return {"image": "data:image/png;base64," + base64.b64encode(encoded).decode("ascii")}
+    return {"file": ("face.png", encoded.tobytes(), "image/png")}
 
 
 def headers(username):
@@ -45,7 +44,7 @@ def headers(username):
 
 def test_login_session_me_logout_and_admin_access(account_db):
     with TestClient(create_app(RecognizedFace())) as client:
-        response = client.post("/predict", json=image_payload())
+        response = client.post("/predict", files=image_payload())
         assert response.status_code == 200
         assert response.headers["cache-control"] == "no-store"
         data = response.json()
@@ -87,7 +86,7 @@ def test_unknown_and_disabled_accounts_cannot_login(account_db):
     for name in ("outsider", "alice"):
         database.change_account("alice", disable=True)
         with TestClient(create_app(RecognizedFace(name))) as client:
-            assert client.post("/predict", json=image_payload()).status_code == 403
+            assert client.post("/predict", files=image_payload()).status_code == 403
     assert database.get_logs() == []
 
 

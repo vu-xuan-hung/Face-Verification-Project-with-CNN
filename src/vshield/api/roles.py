@@ -9,12 +9,6 @@ class Role(str, Enum):
     USER = "USER"
 
 
-class Status(str, Enum):
-    ACTIVE = "ACTIVE"
-    DISABLED = "DISABLED"
-    DELETED = "DELETED"
-
-
 ROLES = frozenset(role.value for role in Role)
 
 
