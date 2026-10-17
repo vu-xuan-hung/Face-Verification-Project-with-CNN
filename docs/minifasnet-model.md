@@ -45,7 +45,7 @@ Actually verified 2026-09-10: PyTorch `2.14.0+cpu` versus ONNX Runtime `1.29.0`,
 ## Limitations and safety
 
 - Passive RGB PAD does not authenticate camera origin or eliminate replay/deepfake risks.
-- Haar is intentionally retained; its bbox distribution differs from reference RetinaFace. Camera/domain validation remains required.
+- Face detection now uses [YOLOv8n-Face](yolo-face-detector.md); its bbox distribution differs from the reference RetinaFace and previous Haar pipeline. Camera/domain validation remains required.
 - No real-camera accuracy benchmark or threshold calibration is claimed.
 - Legacy enrollments remain unverified, never retroactively marked as PAD-passed.
 - Missing/corrupt model, invalid contract/output, load/inference error must deny. Never bypass PAD to restore login.
